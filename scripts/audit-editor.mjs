@@ -226,7 +226,6 @@ for (const [w, h, label] of VIEWPORTS) {
   check(`${label}: page scroll locked`, layout.bodyOverflow === 'hidden', `body overflow=${layout.bodyOverflow}`);
   check(`${label}: editor does not overflow`, layout.editorOverflowX <= 0 && layout.editorOverflowY <= 0, `x=${layout.editorOverflowX} y=${layout.editorOverflowY}`);
   check(`${label}: no horizontal overflow`, layout.editorOverflowX <= 0, `overflow=${layout.editorOverflowX}px`);
-  check(`${label}: controls reachable`, layout.scrollable, `panelScroll=${layout.scrollable}`);
   check(`${label}: Save + Save & Next visible`, layout.save && layout.next);
   check(`${label}: Undo + Redo visible`, layout.undo && layout.redo);
 
@@ -274,12 +273,49 @@ for (const [w, h, label] of VIEWPORTS) {
   check(`${label}: touch + stylus strokes counted`, /^2 strokes$/.test((finalStrokes || '').trim()), `"${(finalStrokes || '').trim()}"`);
 
   // Eraser must actually remove ink.
+  const toolsTab = page.locator('aside button', { hasText: /^Tools$/ });
+  if ((await toolsTab.count()) && (await toolsTab.first().isVisible())) {
+    await toolsTab.first().click();
+    await page.waitForTimeout(200);
+  }
   await page.locator('button', { hasText: /^eraser$/i }).first().click();
   await page.waitForTimeout(150);
   const eraseBefore = await inkCount(page);
   await synthStroke(page, 'mouse', 0.38);
   const eraseAfter = await inkCount(page);
   check(`${label}: eraser removes ink`, eraseAfter < eraseBefore, `${eraseBefore} -> ${eraseAfter}`);
+
+// The eraser ring must sit exactly under the pointer (stage-relative math).
+  const center = await page.evaluate(() => {
+    const s = document.querySelector('[data-testid="handwriting-stage"]')?.getBoundingClientRect();
+    return s ? { x: s.left + s.width / 2, y: s.top + s.height / 2 } : null;
+  });
+  if (center) {
+    await page.mouse.move(center.x + 6, center.y + 6);
+    await page.waitForTimeout(60);
+    await page.mouse.move(center.x, center.y);
+    await page.waitForTimeout(150);
+  }
+  const ringProbe = await page.evaluate(() => {
+    const stage = document.querySelector('[data-testid="handwriting-stage"]')?.getBoundingClientRect();
+    const ringEl = document.querySelector('[data-testid="eraser-ring"]');
+    const ring = ringEl?.getBoundingClientRect();
+    return stage && ring
+      ? {
+          dx: ring.left + ring.width / 2 - (stage.left + stage.width / 2),
+          dy: ring.top + ring.height / 2 - (stage.top + stage.height / 2),
+          w: Math.round(ring.width),
+          left: ringEl.style.left,
+        }
+      : null;
+  });
+  check(
+    `${label}: eraser ring tracks the pointer`,
+    !!ringProbe && Math.abs(ringProbe.dx) < 2 && Math.abs(ringProbe.dy) < 2,
+    ringProbe
+      ? `offset ${ringProbe.dx.toFixed(1)},${ringProbe.dy.toFixed(1)}px size ${ringProbe.w}px left=${ringProbe.left}`
+      : 'no ring',
+  );
 
   // Clear empties the canvas and resets the counter.
   await page.locator('button', { hasText: /^Clear$/ }).first().click();
@@ -303,6 +339,46 @@ for (const [w, h, label] of VIEWPORTS) {
       console.log(`--   ${label}: controls disclosure is desktop-only`);
     }
   }
+
+  // No scroll view inside the left panel: every control must fit the viewport.
+  const panelFit = await page.evaluate(() => {
+    const aside = document.querySelector('aside');
+    if (!aside) return { scrolls: true, overflow: 0, bottom: 0 };
+    const scrollers = [...aside.querySelectorAll('*')].filter(
+      (el) => el.scrollHeight > el.clientHeight + 2 && ['auto', 'scroll'].includes(getComputedStyle(el).overflowY),
+    );
+    let lowest = 0;
+    aside.querySelectorAll('button, p, dl').forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.height > 0) lowest = Math.max(lowest, r.bottom);
+    });
+    return { scrolls: scrollers.length > 0, overflow: aside.scrollHeight - aside.clientHeight, bottom: Math.round(lowest) };
+  });
+  check(`${label}: left panel does not scroll`, !panelFit.scrolls && panelFit.overflow <= 1, `overflow=${panelFit.overflow}px scrollers=${panelFit.scrolls}`);
+  check(`${label}: left panel fits the viewport`, panelFit.bottom <= h + 1, `lowest control at ${panelFit.bottom}px of ${h}px`);
+
+  // Shortcut sheet floats over the panel without reflowing it.
+  const asideBefore = await page.evaluate(() => {
+    const a = document.querySelector('aside');
+    return a ? a.getBoundingClientRect().height : 0;
+  });
+  await page.locator('button[aria-label="Keyboard shortcuts"]').first().click();
+  await page.waitForTimeout(320);
+  const shortcuts = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="editor-shortcuts"]');
+    const a = document.querySelector('aside');
+    const r = panel?.getBoundingClientRect();
+    return {
+      visible: !!panel && getComputedStyle(panel).opacity === '1' && !!r && r.height > 40,
+      inside: !!r && !!a && r.bottom <= a.getBoundingClientRect().bottom + 1 && r.right <= a.getBoundingClientRect().right + 1,
+      asideHeight: a ? a.getBoundingClientRect().height : 0,
+    };
+  });
+  check(`${label}: shortcut sheet opens`, shortcuts.visible);
+  check(`${label}: shortcut sheet stays inside the panel`, shortcuts.inside);
+  check(`${label}: shortcut sheet does not resize the panel`, Math.abs(shortcuts.asideHeight - asideBefore) < 1.5, `${asideBefore} -> ${shortcuts.asideHeight}`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
 
   check(`${label}: no console errors`, errors.length === 0, errors.slice(0, 2).join(' | '));
   await page.close();

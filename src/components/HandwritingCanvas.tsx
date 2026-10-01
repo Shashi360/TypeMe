@@ -57,7 +57,7 @@ const GUIDELINES = {
   descender: 360,
 };
 
-const ERASER_RADIUS: Record<EraserScale, number> = { small: 8, medium: 18, large: 34 };
+const ERASER_RADIUS: Record<EraserScale, number> = { small: 16, medium: 30, large: 52 };
 const PEN_WIDTHS = { Fine: 3.5, Regular: 5.5, Bold: 8 } as const;
 
 const WRITING_TIPS = [
@@ -135,6 +135,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   const [milestone, setMilestone] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [panelTab, setPanelTab] = useState<'chars' | 'tools'>('chars');
   const [tipIndex, setTipIndex] = useState(0);
   const [stageBox, setStageBox] = useState(0);
 
@@ -469,16 +470,30 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   }, [activeStrokes, pushUndo, writeStrokes]);
 
   // ------------------------------------------------------------------ canvas
-  const toCanvasPoint = useCallback((e: React.PointerEvent<HTMLCanvasElement>): Point | null => {
+  const toCanvasPoint = useCallback(
+    (e: { clientX: number; clientY: number; pressure?: number }): Point | null => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return null;
+      return {
+        x: ((e.clientX - rect.left) / rect.width) * VIRTUAL_WIDTH,
+        y: ((e.clientY - rect.top) / rect.height) * VIRTUAL_HEIGHT,
+        pressure: e.pressure && e.pressure > 0 ? e.pressure : undefined,
+      };
+    },
+    [],
+  );
+
+  // Eraser ring position, measured inside the square stage (not the viewport).
+  const setStagePoint = useCallback((e: { clientX: number; clientY: number }) => {
+    // Measure the canvas itself: the ring is absolutely positioned inside the
+    // square stage, and stageRef is the larger centring wrapper around it.
     const canvas = canvasRef.current;
-    if (!canvas) return null;
+    if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return null;
-    return {
-      x: ((e.clientX - rect.left) / rect.width) * VIRTUAL_WIDTH,
-      y: ((e.clientY - rect.top) / rect.height) * VIRTUAL_HEIGHT,
-      pressure: e.pressure > 0 ? e.pressure : undefined,
-    };
+    if (rect.width === 0) return;
+    setEraserCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   }, []);
 
   const eraseAt = useCallback(
@@ -518,10 +533,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         /* capture is best effort */
       }
       isDrawingRef.current = true;
+      erasingRef.current = false;
       if (tool === 'eraser') {
-        erasingRef.current = false;
+        setStagePoint(e);
         eraseAt(point);
-        setEraserCursor({ x: e.clientX, y: e.clientY });
         return;
       }
       pushUndo(activeStrokes);
@@ -533,23 +548,39 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (tool === 'eraser') {
-        const rect = e.currentTarget.getBoundingClientRect();
-        setEraserCursor({ x: e.clientX, y: e.clientY });
-      }
+      if (tool === 'eraser') setStagePoint(e);
       if (!isDrawingRef.current) return;
       e.preventDefault();
       if (pointerTypeRef.current === 'pen' && e.pointerType === 'touch') return;
-      const point = toCanvasPoint(e);
-      if (!point) return;
+
       if (tool === 'eraser') {
-        eraseAt(point);
+        // Consume every coalesced sample so fast drags erase without gaps.
+        const samples = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
+        const list = samples.length ? samples : [e.nativeEvent];
+        list.forEach((sample) => {
+          const p = toCanvasPoint(sample);
+          if (p) eraseAt(p);
+        });
         return;
       }
+
       const pts = activeStrokeRef.current;
-      const last = pts[pts.length - 1];
-      if (last && Math.hypot(point.x - last.x, point.y - last.y) < 1.6) return;
-      pts.push(point);
+      const push = (x: number, y: number) => {
+        const last = pts[pts.length - 1];
+        // Sub-pixel spacing keeps fast movement smooth instead of angular.
+        if (last && Math.hypot(x - last.x, y - last.y) < 0.8) return;
+        pts.push({ x, y });
+      };
+      const samples = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
+      if (samples.length) {
+        samples.forEach((sample) => {
+          const p = toCanvasPoint(sample);
+          if (p) push(p.x, p.y);
+        });
+      } else {
+        const p = toCanvasPoint(e);
+        if (p) push(p.x, p.y);
+      }
       schedulePaint();
     },
     [tool, toCanvasPoint, eraseAt, schedulePaint],
@@ -773,12 +804,33 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       ? 'Autosaved'
       : 'Saved locally';
 
+  // The shortcut sheet floats over the panel so opening it never reflows or
+  // pushes the controls out of view.
+  useEffect(() => {
+    if (!showShortcuts) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-shortcuts-panel]') || target.closest('[aria-label="Keyboard shortcuts"]')) return;
+      setShowShortcuts(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowShortcuts(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showShortcuts]);
+
   const renderStage = (pad: string) => (
     <div
       ref={stageRef}
       className={`flex min-h-0 flex-1 items-center justify-center overflow-hidden ${pad}`}
     >
       <div
+        data-testid="handwriting-stage"
         className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm"
         style={stageBox ? { width: stageBox, height: stageBox } : { width: '100%', aspectRatio: '1 / 1' }}
       >
@@ -802,6 +854,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         {tool === 'eraser' && isHovering && eraserCursor && stageBox ? (
           <div
             aria-hidden="true"
+            data-testid="eraser-ring"
             className="pointer-events-none absolute rounded-full border-2 border-neutral-900 bg-neutral-900/10"
             style={{
               left: eraserCursor.x,
@@ -830,97 +883,70 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       className="fixed inset-0 z-[70] flex h-dvh w-full flex-col overflow-hidden bg-neutral-50 text-neutral-900"
     >
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* ------------------------------------------------- LEFT: controls */}
-        <aside className="flex max-h-[44dvh] w-full shrink-0 flex-col overflow-hidden border-b border-neutral-200 bg-white lg:max-h-none lg:h-full lg:w-[clamp(300px,26vw,360px)] lg:border-b-0 lg:border-r">
-          <header className="flex items-center justify-between gap-3 border-b border-neutral-100 px-4 py-2.5">
-            <div className="min-w-0">
-              <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">
-                Your font
-              </p>
-              <p className="truncate font-serif text-base font-semibold text-neutral-900">
-                {projectName}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPanelOpen((v) => !v)}
-                title={panelOpen ? 'Hide controls' : 'Show controls'}
-                aria-label={panelOpen ? 'Hide controls' : 'Show controls'}
-                aria-expanded={panelOpen}
-                className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 lg:hidden"
-              >
-                <SlidersHorizontal
-                  className={`h-3.5 w-3.5 transition-transform duration-200 ${panelOpen ? '' : 'rotate-90'}`}
-                />
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowShortcuts((s) => !s)}
-                title="Keyboard shortcuts"
-                aria-label="Keyboard shortcuts"
-                className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-              >
-                <Keyboard className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsExpanded((s) => !s)}
-                title={isExpanded ? 'Restore layout' : 'Focus canvas'}
-                aria-label={isExpanded ? 'Restore layout' : 'Focus canvas'}
-                className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-              >
-                {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => onClose()}
-                title="Save and close"
-                aria-label="Save and close"
-                className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </header>
-
-          {showShortcuts ? (
-            <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-neutral-100 bg-neutral-50 px-4 py-2 font-mono text-[10px] text-neutral-500">
-              <span>
-                <b className="text-neutral-900">Enter</b> save &amp; next
-              </span>
-              <span>
-                <b className="text-neutral-900">←</b> previous
-              </span>
-              <span>
-                <b className="text-neutral-900">Ctrl+Z</b> undo
-              </span>
-              <span>
-                <b className="text-neutral-900">1-4</b> pens
-              </span>
-              <span>
-                <b className="text-neutral-900">E</b> eraser
-              </span>
-            </div>
-          ) : null}
-
-          <div
-            className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 ${
-              panelOpen ? '' : 'hidden lg:block'
-            }`}
-          >
-            {/* progress */}
-            <section>
-              <div className="flex items-baseline justify-between">
-                <h3 className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">
-                  Your progress
-                </h3>
-                <p className="font-mono text-[11px] text-neutral-500">
-                  {done} / {total}
+{/* ------------------------------------------------- LEFT: controls */}
+        <aside className="relative flex max-h-[56dvh] w-full shrink-0 flex-col overflow-hidden border-b border-neutral-200 bg-white lg:max-h-none lg:h-full lg:w-[clamp(296px,25vw,352px)] lg:border-b-0 lg:border-r">
+          <header className="shrink-0 border-b border-neutral-100 px-3 pb-2 pt-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-400">
+                  {projectName}
+                </p>
+                <p className="mt-0.5 flex items-baseline gap-1.5">
+                  <span className="font-serif text-base font-semibold leading-none text-neutral-900">
+                    {done}
+                  </span>
+                  <span className="font-mono text-[10px] text-neutral-400">
+                    / {total} written
+                  </span>
                 </p>
               </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPanelOpen((v) => !v)}
+                  title={panelOpen ? 'Hide controls' : 'Show controls'}
+                  aria-label={panelOpen ? 'Hide controls' : 'Show controls'}
+                  aria-expanded={panelOpen}
+                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 lg:hidden"
+                >
+                  <SlidersHorizontal
+                    className={`h-3.5 w-3.5 transition-transform duration-200 ${panelOpen ? '' : 'rotate-90'}`}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowShortcuts((s) => !s)}
+                  title="Keyboard shortcuts"
+                  aria-label="Keyboard shortcuts"
+                  aria-expanded={showShortcuts}
+                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+                >
+                  <Keyboard className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded((s) => !s)}
+                  title={isExpanded ? 'Restore layout' : 'Focus canvas'}
+                  aria-label={isExpanded ? 'Restore layout' : 'Focus canvas'}
+                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+                >
+                  {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onClose()}
+                  title="Save and close"
+                  aria-label="Save and close"
+                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-2 flex items-center gap-2">
               <div
-                className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100"
+                className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"
                 role="progressbar"
                 aria-valuenow={progressPercent}
                 aria-valuemin={0}
@@ -932,40 +958,112 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
-              <p className="mt-2 min-h-[2.5rem] text-[11px] leading-snug text-neutral-500">
-                {milestone ?? WRITING_TIPS[tipIndex]}
-              </p>
-            </section>
+              <span
+                aria-live="polite"
+                title={statusLabel}
+                aria-label={statusLabel}
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none transition-colors ${
+                  saveState === 'error'
+                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                    : saveState === 'saving'
+                    ? 'border-neutral-200 bg-neutral-100 text-neutral-500'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}
+              >
+                {saveState === 'saving' ? (
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                ) : saveState === 'error' ? (
+                  <AlertCircle className="h-2.5 w-2.5" />
+                ) : online ? (
+                  <Cloud className="h-2.5 w-2.5" />
+                ) : (
+                  <CloudOff className="h-2.5 w-2.5" />
+                )}
+                {saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved' : online ? 'Autosaved' : 'Local'}
+              </span>
+            </div>
+          </header>
 
-            <div className="my-4 h-px bg-neutral-100" />
+          {/* Shortcut sheet: floats, never reflows the panel */}
+          <div
+            data-shortcuts-panel
+            data-testid="editor-shortcuts"
+            role="dialog"
+            aria-label="Keyboard shortcuts"
+            className={`absolute right-2 top-[3.4rem] z-30 w-[15.5rem] origin-top-right rounded-xl border border-neutral-200 bg-white p-2.5 shadow-lg transition-all duration-200 ease-out ${
+              showShortcuts
+                ? 'pointer-events-auto translate-y-0 scale-100 opacity-100'
+                : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0'
+            }`}
+          >
+            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-400">Shortcuts</p>
+            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1 text-[10px] text-neutral-600">
+              {[
+                ['Enter', 'save & next'],
+                ['\u2190', 'previous'],
+                ['Ctrl+Z', 'undo'],
+                ['Ctrl+Y', 'redo'],
+                ['1\u20134', 'pens'],
+                ['E', 'eraser'],
+                ['Esc', 'close'],
+              ].map(([key, label]) => (
+                <React.Fragment key={key}>
+                  <dt>
+                    <kbd className="rounded border border-neutral-200 bg-neutral-50 px-1 py-px font-mono text-[9px] text-neutral-800">
+                      {key}
+                    </kbd>
+                  </dt>
+                  <dd className="self-center">{label}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+          </div>
 
-            {/* current character */}
-            <section>
-              <h3 className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">Write</h3>
-              <div className="mt-2 flex items-center gap-3">
+          <div
+            className={`flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3 pt-2.5 ${
+              panelOpen ? '' : 'hidden lg:flex'
+            }`}
+          >
+            {/* mobile section switch — keeps every control reachable without scrolling */}
+            <div className="mb-2 flex shrink-0 gap-1 rounded-lg bg-neutral-100 p-0.5 lg:hidden">
+              {(['chars', 'tools'] as const).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPanelTab(key)}
+                  aria-pressed={panelTab === key}
+                  className={`flex-1 cursor-pointer rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                    panelTab === key ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-900'
+                  }`}
+                >
+                  {key === 'chars' ? 'Characters' : 'Tools'}
+                </button>
+              ))}
+            </div>
+
+            {/* ------------------------------------------------ characters */}
+            <div
+              className={`min-h-0 flex-1 flex-col gap-2.5 ${
+                panelTab === 'chars' ? 'flex' : 'hidden lg:flex'
+              }`}
+            >
+              <div className="flex shrink-0 items-center gap-2.5">
                 <span
                   key={character.char}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 font-serif text-xl font-semibold text-neutral-900"
                 >
                   {character.char}
                 </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-neutral-900">
-                    {character.category} · {currentIndex >= 0 ? `Character ${currentIndex + 1} of ${allCharacterList.length}` : 'Character'}
-                  </p>
-                  <p className="text-[11px] text-neutral-500">Write it the way you normally would.</p>
-                </div>
+                <p className="min-w-0 flex-1 text-[10px] leading-tight text-neutral-500">
+                  <span className="block truncate font-medium capitalize text-neutral-800">
+                    {character.category}
+                    {currentIndex >= 0 ? ` \u00b7 ${currentIndex + 1} of ${allCharacterList.length}` : ''}
+                  </span>
+                  <span className="truncate">{milestone ?? WRITING_TIPS[tipIndex]}</span>
+                </p>
               </div>
-            </section>
 
-            <div className="my-4 h-px bg-neutral-100" />
-
-            {/* character navigation */}
-            <section>
-              <h3 className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">
-                Characters
-              </h3>
-              <div className="mt-2 flex gap-1 rounded-lg bg-neutral-100 p-0.5">
+              <div className="flex shrink-0 gap-1 rounded-lg bg-neutral-100 p-0.5">
                 {CATEGORY_TABS.map((tab) => {
                   const isActive = activeTab === tab.key;
                   return (
@@ -974,7 +1072,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       type="button"
                       onClick={() => setActiveTab(tab.key)}
                       aria-pressed={isActive}
-                      className={`flex-1 cursor-pointer rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                      className={`flex-1 cursor-pointer rounded-md px-1 py-1 font-mono text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
                         isActive ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-900'
                       }`}
                     >
@@ -983,9 +1081,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   );
                 })}
               </div>
+
               <div
-                className={`mt-2 grid gap-1 ${
-                  activeTab === 'uppercase' || activeTab === 'lowercase' ? 'grid-cols-7' : 'grid-cols-6'
+                className={`grid min-h-0 flex-1 content-start gap-1 ${
+                  activeTab === 'uppercase' || activeTab === 'lowercase'
+                    ? 'grid-cols-7 sm:grid-cols-9'
+                    : 'grid-cols-7 sm:grid-cols-10'
                 }`}
               >
                 {tabChars.map((c) => {
@@ -995,22 +1096,22 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       key={c.char}
                       type="button"
                       onClick={() => switchCharacter(c.char)}
-                      title={c.hasStrokes ? `${c.char} — completed` : `${c.char} — not written yet`}
+                      title={c.hasStrokes ? `${c.char} \u2014 completed` : `${c.char} \u2014 not written yet`}
                       aria-label={c.hasStrokes ? `${c.char}, completed` : `${c.char}, not written yet`}
                       aria-current={isCurrent}
-                      className={`relative flex aspect-square cursor-pointer items-center justify-center rounded-lg border text-sm font-medium transition-all duration-150 hover:-translate-y-px hover:scale-[1.04] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                      className={`relative flex aspect-square cursor-pointer items-center justify-center rounded-md border text-[11px] font-medium leading-none transition-all duration-150 hover:border-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
                         isCurrent
                           ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm'
                           : c.hasStrokes
-                          ? 'border-neutral-200 bg-white text-neutral-900 hover:border-neutral-400'
-                          : 'border-dashed border-neutral-300 bg-white/70 text-neutral-400 hover:border-neutral-500'
+                          ? 'border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50'
+                          : 'border-dashed border-neutral-300 bg-white text-neutral-400 hover:border-neutral-500'
                       }`}
                     >
                       {c.char}
                       {c.hasStrokes ? (
                         <span
-                          className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-blue-500 transition-all duration-200 ${
-                            isCurrent ? 'opacity-100' : 'scale-100 opacity-100'
+                          className={`absolute right-[3px] top-[3px] h-1 w-1 rounded-full bg-blue-500 transition-transform duration-200 ${
+                            isCurrent ? 'scale-125' : ''
                           }`}
                         />
                       ) : null}
@@ -1018,14 +1119,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   );
                 })}
               </div>
-            </section>
+            </div>
 
-            <div className="my-4 h-px bg-neutral-100" />
-
-            {/* tools */}
-            <section>
-              <h3 className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">Tools</h3>
-              <div className="mt-2 flex gap-1 rounded-lg bg-neutral-100 p-0.5">
+            {/* ------------------------------------------------ tools */}
+            <div
+              className={`min-h-0 flex-1 flex-col gap-2.5 ${
+                panelTab === 'tools' ? 'flex' : 'hidden lg:flex'
+              }`}
+            >
+              <div className="flex shrink-0 gap-1 rounded-lg bg-neutral-100 p-0.5">
                 {(['pen', 'eraser'] as const).map((t) => (
                   <button
                     key={t}
@@ -1043,51 +1145,32 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               </div>
 
               {tool === 'pen' ? (
-                <div className="mt-2 space-y-2">
-                  <div className="grid grid-cols-4 gap-1">
-                    {(['gel', 'fountain', 'marker', 'pencil'] as PenStyle[]).map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setPenStyle(s)}
-                        aria-pressed={penStyle === s}
-                        className={`cursor-pointer rounded-md border px-1 py-1.5 text-[10px] capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                          penStyle === s
-                            ? 'border-neutral-900 bg-neutral-900 text-white'
-                            : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                        }`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {(Object.keys(PEN_WIDTHS) as (keyof typeof PEN_WIDTHS)[]).map((label) => (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => setStrokeWidth(PEN_WIDTHS[label])}
-                        aria-pressed={strokeWidth === PEN_WIDTHS[label]}
-                        className={`flex-1 cursor-pointer rounded-md border px-1 py-1 text-[10px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                          strokeWidth === PEN_WIDTHS[label]
-                            ? 'border-neutral-900 bg-neutral-900 text-white'
-                            : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="grid shrink-0 grid-cols-4 gap-1">
+                  {(['gel', 'fountain', 'marker', 'pencil'] as PenStyle[]).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setPenStyle(s)}
+                      aria-pressed={penStyle === s}
+                      className={`cursor-pointer rounded-md border px-1 py-1.5 text-[10px] capitalize leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                        penStyle === s
+                          ? 'border-neutral-900 bg-neutral-900 text-white'
+                          : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
                 </div>
               ) : (
-                <div className="mt-2 grid grid-cols-3 gap-1">
+                <div className="grid shrink-0 grid-cols-3 gap-1">
                   {(['small', 'medium', 'large'] as EraserScale[]).map((s) => (
                     <button
                       key={s}
                       type="button"
                       onClick={() => setEraserScale(s)}
                       aria-pressed={eraserScale === s}
-                      className={`cursor-pointer rounded-md border px-1 py-1.5 text-[10px] capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                      className={`cursor-pointer rounded-md border px-1 py-1.5 text-[10px] capitalize leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
                         eraserScale === s
                           ? 'border-neutral-900 bg-neutral-900 text-white'
                           : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
@@ -1099,82 +1182,93 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 </div>
               )}
 
-              <div className="mt-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-neutral-500">Guidelines</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowGuidelines((v) => !v)}
-                    aria-pressed={showGuidelines}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-600 transition-colors hover:border-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900"
-                  >
-                    {showGuidelines ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                    {showGuidelines ? 'On' : 'Off'}
-                  </button>
-                </div>
-                <div className="mt-1 grid grid-cols-2 gap-1">
-                  {(['typography', 'notebook', 'dots', 'blank'] as GuidelineStyle[]).map((s) => (
+              {tool === 'pen' ? (
+                <div className="flex shrink-0 gap-1">
+                  {(Object.keys(PEN_WIDTHS) as (keyof typeof PEN_WIDTHS)[]).map((label) => (
                     <button
-                      key={s}
+                      key={label}
                       type="button"
-                      onClick={() => {
-                        setGuidelineStyle(s);
-                        setShowGuidelines(s !== 'blank');
-                      }}
-                      aria-pressed={guidelineStyle === s}
-                      className={`cursor-pointer rounded-md border px-1 py-1.5 text-[10px] capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                        guidelineStyle === s
+                      onClick={() => setStrokeWidth(PEN_WIDTHS[label])}
+                      aria-pressed={strokeWidth === PEN_WIDTHS[label]}
+                      className={`flex-1 cursor-pointer rounded-md border py-1 text-[10px] leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                        strokeWidth === PEN_WIDTHS[label]
                           ? 'border-neutral-900 bg-neutral-900 text-white'
                           : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
                       }`}
                     >
-                      {s}
+                      {label}
                     </button>
                   ))}
                 </div>
+              ) : null}
+
+              <div className="flex shrink-0 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowGuidelines((v) => !v)}
+                  aria-pressed={showGuidelines}
+                  title={showGuidelines ? 'Hide guidelines' : 'Show guidelines'}
+                  className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border px-1.5 text-[10px] leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                    showGuidelines
+                      ? 'border-neutral-900 bg-neutral-900 text-white'
+                      : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
+                  }`}
+                >
+                  {showGuidelines ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                </button>
+                {(['typography', 'notebook', 'dots', 'blank'] as GuidelineStyle[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      setGuidelineStyle(s);
+                      setShowGuidelines(s !== 'blank');
+                    }}
+                    aria-pressed={guidelineStyle === s}
+                    className={`flex-1 cursor-pointer truncate rounded-md border px-1 py-1 text-[10px] capitalize leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                      guidelineStyle === s
+                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
-            </section>
 
-            <div className="my-4 h-px bg-neutral-100" />
-
-            {/* alternates */}
-            <section>
-              <h3 className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">
-                Alternates
-              </h3>
-              <div className="mt-2 flex flex-wrap items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
                   onClick={() => selectVariant(-1)}
                   aria-pressed={activeVariant === -1}
-                  className={`cursor-pointer rounded-md border px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                  className={`shrink-0 cursor-pointer rounded-md border px-1.5 py-1 text-[10px] leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
                     activeVariant === -1
                       ? 'border-neutral-900 bg-neutral-900 text-white'
                       : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
                   }`}
                 >
-                  Primary
+                  Main
                 </button>
                 {variants.map((v, i) => (
-                  <span key={i} className="inline-flex items-center overflow-hidden rounded-md border border-neutral-200">
+                  <span key={i} className="inline-flex min-w-0 items-center overflow-hidden rounded-md border border-neutral-200">
                     <button
                       type="button"
                       onClick={() => selectVariant(i)}
                       aria-pressed={activeVariant === i}
-                      className={`cursor-pointer px-2 py-1 text-[10px] transition-colors ${
+                      className={`min-w-0 cursor-pointer truncate px-1.5 py-1 text-[10px] leading-none transition-colors ${
                         activeVariant === i ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-50'
                       }`}
                     >
                       Alt {i + 1}
-                      {v.length > 0 ? ' •' : ''}
+                      {v.length > 0 ? ' \u2022' : ''}
                     </button>
                     <button
                       type="button"
                       onClick={() => confirmVariantDelete(i)}
                       aria-label={`Delete alternate ${i + 1}`}
-                      className="cursor-pointer px-1.5 py-1 text-neutral-400 transition-colors hover:text-rose-600"
+                      className="cursor-pointer px-1 py-1 text-neutral-400 transition-colors hover:text-rose-600"
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-2.5 w-2.5" />
                     </button>
                   </span>
                 ))}
@@ -1182,93 +1276,56 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   <button
                     type="button"
                     onClick={addVariant}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dashed border-neutral-300 px-2 py-1 text-[10px] text-neutral-500 transition-colors hover:border-neutral-500 hover:text-neutral-900"
+                    aria-label="Add alternate"
+                    className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-md border border-dashed border-neutral-300 px-1.5 py-1 text-[10px] leading-none text-neutral-500 transition-colors hover:border-neutral-500 hover:text-neutral-900"
                   >
                     <Plus className="h-3 w-3" />
-                    Add alternate
                   </button>
                 ) : null}
               </div>
-            </section>
 
-            <div className="my-4 h-px bg-neutral-100" />
-
-            {/* quality */}
-            <section>
-              <h3 className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">This glyph</h3>
-              <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-600">
-                <span data-testid="editor-stroke-count">
-                  {activeStrokes.length} {activeStrokes.length === 1 ? 'stroke' : 'strokes'}
+              <div className="mt-auto flex shrink-0 items-start gap-1.5 border-t border-neutral-100 pt-2 text-[10px] leading-snug">
+                <span data-testid="editor-stroke-count" className="shrink-0 font-mono text-neutral-500">
+                  {activeStrokes.length}
+                  {activeStrokes.length === 1 ? ' stroke' : ' strokes'}
                 </span>
-                <span
-                  className={
-                    quality.status === 'good'
-                      ? 'text-emerald-600'
-                      : quality.status === 'warning'
-                      ? 'text-amber-600'
-                      : 'text-neutral-400'
-                  }
-                >
-                  {quality.status === 'good' ? 'Looks good' : quality.status === 'warning' ? 'Check this' : 'Ready'}
-                </span>
+                {activeStrokes.length === 0 ? (
+                  <span className="truncate text-neutral-400">Start writing \u2014 nothing is lost, it autosaves.</span>
+                ) : (
+                  <span
+                    className={
+                      quality.status === 'good'
+                        ? 'text-emerald-600'
+                        : quality.status === 'warning'
+                        ? 'text-amber-600'
+                        : 'text-rose-600'
+                    }
+                  >
+                    {quality.feedback}
+                  </span>
+                )}
               </div>
-              {activeStrokes.length > 0 && quality.status !== 'good' ? (
-                <p
-                  className={`mt-2 flex items-start gap-1.5 rounded-lg border px-2.5 py-2 text-[10px] leading-relaxed ${
-                    quality.status === 'warning'
-                      ? 'border-amber-200 bg-amber-50 text-amber-800'
-                      : 'border-rose-200 bg-rose-50 text-rose-800'
-                  }`}
-                >
-                  <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-                  <span>{quality.feedback}</span>
-                </p>
-              ) : null}
-            </section>
+            </div>
           </div>
         </aside>
-
         {/* ------------------------------------------------- RIGHT: editor */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-50">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-neutral-200 bg-white px-4 py-2.5">
-            <div className="min-w-0">
-              <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">Writing</p>
-              <p
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-neutral-200 bg-white px-4 py-2">
+            <p className="flex items-baseline gap-2">
+              <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">Writing</span>
+              <span
                 data-testid="editor-current-char"
-                className="truncate font-serif text-lg font-semibold leading-tight text-neutral-900"
+                className="font-serif text-lg font-semibold leading-none text-neutral-900"
               >
                 {character.char}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <span
-                aria-live="polite"
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium transition-colors ${
-                  saveState === 'error'
-                    ? 'border-rose-200 bg-rose-50 text-rose-700'
-                    : saveState === 'saving'
-                    ? 'border-neutral-200 bg-neutral-100 text-neutral-600'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                }`}
-              >
-                {saveState === 'saving' ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : saveState === 'error' ? (
-                  <AlertCircle className="h-3 w-3" />
-                ) : online ? (
-                  <Cloud className="h-3 w-3" />
-                ) : (
-                  <CloudOff className="h-3 w-3" />
-                )}
-                {statusLabel}
               </span>
-              {milestone ? (
-                <span className="hidden items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700 sm:inline-flex">
-                  <Sparkles className="h-3 w-3" />
-                  {milestone}
-                </span>
-              ) : null}
-            </div>
+            </p>
+            {milestone ? (
+              <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700">
+                <Sparkles className="h-3 w-3 shrink-0" />
+                <span className="truncate">{milestone}</span>
+              </span>
+            ) : null}
           </div>
 
           {variantToDelete !== null ? (
@@ -1296,7 +1353,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             </div>
           ) : null}
 
-          {renderStage(isExpanded ? 'p-1' : 'p-3 sm:p-6')}
+          {renderStage(isExpanded ? '' : 'px-0 py-0')}
 
           {/* sticky action bar */}
           <div className="shrink-0 border-t border-neutral-200 bg-white px-3 py-2.5 sm:px-4">

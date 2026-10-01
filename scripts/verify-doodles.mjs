@@ -93,7 +93,20 @@ for (const [prog, idx] of [[0.08, 0], [0.3, 1], [0.5, 2], [0.7, 3], [0.87, 4], [
   );
 }
 
-/* Headline underline must draw, and stay a gradient (not a flat rule). */
+/* Headline underline must draw, and stay a gradient (not a flat rule).
+   The stroke is a scroll-triggered draw, so wait for it to settle instead of
+   sampling mid-animation. */
+await page
+  .waitForFunction(
+    () => {
+      const p = document.querySelector('.tm-hl-stroke');
+      if (!p) return false;
+      const cs = getComputedStyle(p);
+      return parseFloat(cs.strokeDashoffset) < 0.02;
+    },
+    { timeout: 8000, polling: 100 },
+  )
+  .catch(() => {});
 const hl = await page.evaluate(
   new Function(
     INLINE_DASH +

@@ -446,6 +446,10 @@ export default function App() {
           else setCurrentView('dashboard');
         }}
         onOpenLegal={openLegal}
+        onExploreStyles={() => {
+          setCurrentView('explore');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
         onOpenLearn={() => {
           setCurrentView('learn');
           window.scrollTo({ top: 0, behavior: 'smooth' });

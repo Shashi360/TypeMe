@@ -86,14 +86,27 @@ await page.evaluate(() => {
   const sec = document.getElementById('where-to-use');
   window.scrollTo(0, sec.getBoundingClientRect().top + window.scrollY - 200);
 });
-await page.waitForTimeout(1600);
+// The underline is a 1.4s draw with a 0.25s delay: wait for it to settle rather
+// than racing a fixed sleep against the animation timeline.
+const hlDrawn = await page
+  .waitForFunction(
+    () => {
+      const p = document.querySelector('.tm-hl-stroke');
+      if (!p) return false;
+      const m = String(getComputedStyle(p).strokeDashoffset).match(/-?[\d.]+/);
+      return m ? parseFloat(m[0]) < 0.05 : false;
+    },
+    { timeout: 8000, polling: 100 },
+  )
+  .then(() => true)
+  .catch(() => false);
 const hl = await page.evaluate(() => {
   const p = document.querySelector('.tm-hl-stroke');
   const raw = getComputedStyle(p).strokeDashoffset;
   const m = String(raw).match(/-?[\d.]+/);
   return m ? parseFloat(m[0]) : NaN;
 });
-check('headline underline stays drawn after entry', hl < 0.05, `off=${hl}`);
+check('headline underline stays drawn after entry', hlDrawn && hl < 0.05, `off=${hl}`);
 
 /* --- the reveal clip is released, so the phrase is readable ------------- */
 await seek(0.99);

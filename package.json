@@ -10,6 +10,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "audit:editor": "node scripts/audit-editor.mjs",
+    "audit:about": "node scripts/audit-about.mjs",
     "audit:smoke": "node scripts/audit-smoke.mjs",
     "audit:layout": "node scripts/audit-layout.mjs",
     "audit:story": "node scripts/verify-story.mjs",
@@ -17,7 +18,7 @@
     "audit:scroll": "node scripts/verify-scroll-driven.mjs",
     "audit:sticky": "node scripts/verify-sticky-headline.mjs",
     "audit:accents": "node scripts/verify-accents.mjs",
-    "audit:all": "npm run audit:editor && npm run audit:smoke && npm run audit:layout && npm run audit:story && npm run audit:doodles && npm run audit:scroll && npm run audit:sticky && npm run audit:accents"
+    "audit:all": "npm run audit:editor && npm run audit:about && npm run audit:smoke && npm run audit:layout && npm run audit:story && npm run audit:doodles && npm run audit:scroll && npm run audit:sticky && npm run audit:accents"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
