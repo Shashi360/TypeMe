@@ -80,7 +80,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     small: 8,
     medium: 18,
     large: 34,
-  };
+};
+
   const currentEraserRadius = eraserRadiusMap[eraserScale];
 
   const [quality, setQuality] = useState(() => analyzeCharacterStrokes(strokes, 400, 400));
@@ -500,21 +501,29 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
             <div className="space-y-2">
               <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-700">Character navigation</span>
-              <div className="grid max-h-48 grid-cols-8 gap-1 overflow-auto rounded-lg border border-neutral-200 bg-neutral-50/60 p-2 sm:grid-cols-10 lg:grid-cols-8">
+              <div className="grid grid-cols-8 gap-1 rounded-lg border border-neutral-200 bg-neutral-50/60 p-2 sm:grid-cols-10 lg:grid-cols-8">
                 {allCharacterList.map((c) => (
                   <button
                     key={c.char}
                     type="button"
                     onClick={() => onSelectCharacter?.(c.char)}
-                    className={`flex aspect-square items-center justify-center rounded-md border text-sm font-medium transition-colors ${
-                      c.char === character.char
-                        ? 'border-neutral-900 bg-neutral-900 text-white'
-                        : c.hasStrokes
-                        ? 'border-neutral-200 bg-white text-neutral-900 hover:border-neutral-900'
-                        : 'border-dashed border-neutral-300 bg-white/70 text-neutral-500 hover:border-neutral-500'
-                    }`}
+                      className={`relative flex aspect-square items-center justify-center rounded-lg border text-base font-medium transition-all duration-150 group ${
+                        c.char === character.char
+                          ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm ring-2 ring-neutral-900/20'
+                          : c.hasStrokes
+                          ? 'border-neutral-300 bg-white text-neutral-900 hover:border-neutral-900 hover:shadow-xs'
+                          : 'border-dashed border-neutral-300 bg-white/70 text-neutral-500 hover:border-neutral-500'
+                      }`}
                   >
-                    {c.char}
+                      {c.char}
+                      {c.hasStrokes && (
+                        <span
+                          className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-blue-500 shadow-xs transition-transform duration-200 ${
+                            c.hasStrokes ? 'scale-100 opacity-100' : 'scale-0 opacity-0'
+                          }`}
+                          title="Completed"
+                        />
+                      )}
                   </button>
                 ))}
               </div>
@@ -682,14 +691,16 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 </button>
               </div>
             </div>
+          </div>
 
-            <div className="mt-auto space-y-2">
-              <div className="grid grid-cols-2 gap-1">
+          <div className="flex flex-col gap-2 border-t border-neutral-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-4 sm:py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={undo}
                   disabled={undoStack.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Undo
@@ -698,46 +709,40 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   type="button"
                   onClick={redo}
                   disabled={redoStack.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <RotateCw className="h-3.5 w-3.5" />
                   Redo
                 </button>
-              </div>
-              <button
-                type="button"
-                onClick={clearCanvas}
-                disabled={currentStrokes.length === 0}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium text-rose-700 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Clear
-              </button>
-              <div className="grid grid-cols-3 gap-1">
                 <button
                   type="button"
-                  onClick={onPrevious}
-                  disabled={!hasPrevious}
-                  className="inline-flex items-center justify-center gap-1 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={clearCanvas}
+                  disabled={currentStrokes.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-rose-700 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                  Prev
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Clear
                 </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="inline-flex items-center justify-center gap-1 rounded-md bg-neutral-900 px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-neutral-800"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-neutral-800"
                 >
                   <Check className="h-3.5 w-3.5" />
                   Save
                 </button>
                 <button
                   type="button"
-                  onClick={onNext}
-                  disabled={!hasNext}
-                  className="inline-flex items-center justify-center gap-1 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => {
+                    handleSave();
+                    if (onNext) onNext();
+                  }}
+                  disabled={!hasNext && activeVariantIndex === -1 && strokes.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  Next
+                  Save &amp; Next
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -748,7 +753,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-neutral-50">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-4">
             <div className="flex items-center gap-2 text-[11px] text-neutral-600">
-              <span className="font-medium text-neutral-900">{character.char}</span>
+              <span className="font-medium text-neutral-900">Write</span>
+              <span>•</span>
+              <span className="text-base font-serif font-semibold text-neutral-900">{character.char}</span>
               <span>•</span>
               <span>{strokes.length} strokes</span>
               <span>•</span>
@@ -783,25 +790,34 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             </div>
           </div>
 
-          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-2 sm:p-4">
-            <div
-              className={`relative flex aspect-square max-h-full w-auto max-w-full items-center justify-center overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm ${
-                isExpanded ? 'h-[min(92dvh,92vw)] w-[min(92dvh,92vw)]' : 'h-[min(78dvh,78vw)] w-[min(78dvh,78vw)] sm:h-[min(82dvh,82vw)] sm:w-[min(82dvh,82vw)] lg:h-[min(88dvh,88vw)] lg:w-[min(88dvh,88vw)]'
-              }`}
-            >
-              <canvas
-                ref={canvasRef}
-                width={VIRTUAL_WIDTH}
-                height={VIRTUAL_HEIGHT}
-                className="h-full w-full touch-none select-none"
-                style={{ touchAction: 'none' }}
-                onPointerDown={startDrawing}
-                onPointerMove={draw}
-                onPointerUp={endDrawing}
-                onPointerCancel={endDrawing}
-                onPointerLeave={handlePointerLeave}
-                onPointerEnter={handlePointerEnter}
-              />
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden p-2 sm:p-4">
+            <div className="mb-4 flex flex-col items-center justify-center text-center">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Write</p>
+              <div className="mt-1 font-serif text-[clamp(4rem,12vw,6rem)] leading-none text-neutral-900">
+                {character.char}
+              </div>
+              <p className="mt-2 text-xs text-neutral-500">Write this character naturally</p>
+            </div>
+            <div className="relative flex flex-1 items-center justify-center overflow-hidden">
+              <div
+                className={`relative flex aspect-square max-h-full w-auto max-w-full items-center justify-center overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm ${
+                  isExpanded ? 'h-[min(86dvh,86vw)] w-[min(86dvh,86vw)]' : 'h-[min(72dvh,72vw)] w-[min(72dvh,72vw)] sm:h-[min(76dvh,76vw)] sm:w-[min(76dvh,76vw)] lg:h-[min(80dvh,80vw)] lg:w-[min(80dvh,80vw)]'
+                }`}
+              >
+                <canvas
+                  ref={canvasRef}
+                  width={VIRTUAL_WIDTH}
+                  height={VIRTUAL_HEIGHT}
+                  className="h-full w-full touch-none select-none"
+                  style={{ touchAction: 'none' }}
+                  onPointerDown={startDrawing}
+                  onPointerMove={draw}
+                  onPointerUp={endDrawing}
+                  onPointerCancel={endDrawing}
+                  onPointerLeave={handlePointerLeave}
+                  onPointerEnter={handlePointerEnter}
+                />
+              </div>
             </div>
           </div>
         </main>
