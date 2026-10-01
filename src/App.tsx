@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FontProject, User, AppView, Stroke } from './types';
+import { FontProject, User, AppView, Stroke, LegalDoc } from './types';
 import {
   createInitialSampleProject,
   createArchitectSampleProject,
@@ -21,6 +21,7 @@ import { GenerationModal } from './components/GenerationModal';
 import { StyleQuizModal } from './components/StyleQuizModal';
 import { LearnView } from './components/LearnView';
 import { StyleExplorerView } from './components/StyleExplorerView';
+import LegalView from './components/LegalView';
 import { AdminView } from './components/AdminView';
 
 export default function App() {
@@ -62,6 +63,15 @@ export default function App() {
   const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
   const [generationModalOpen, setGenerationModalOpen] = useState(false);
   const [quizModalOpen, setQuizModalOpen] = useState(false);
+
+  // Legal document state
+  const [legalDoc, setLegalDoc] = useState<LegalDoc>('privacy');
+
+  const openLegal = (doc: LegalDoc) => {
+    setLegalDoc(doc);
+    setCurrentView('legal');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Sync state to localStorage
   useEffect(() => {
@@ -375,6 +385,24 @@ export default function App() {
             />
           )}
 
+          {currentView === 'legal' && (
+            <LegalView
+              doc={legalDoc}
+              onOpenDoc={(doc) => {
+                setLegalDoc(doc);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onNavigate={(view) => {
+                setCurrentView(view);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onStartWriting={() => {
+                if (!user) handleStartNewFont();
+                else setCurrentView('dashboard');
+              }}
+            />
+          )}
+
           {currentView === 'pricing' && (
             <PricingView
               user={user}
@@ -417,6 +445,7 @@ export default function App() {
           if (!user) handleStartNewFont();
           else setCurrentView('dashboard');
         }}
+        onOpenLegal={openLegal}
         onOpenLearn={() => {
           setCurrentView('learn');
           window.scrollTo({ top: 0, behavior: 'smooth' });

@@ -16,6 +16,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { WhereToUseStory } from './WhereToUseStory';
+import AboutFounder from './AboutFounder';
 
 interface LandingPageProps {
   onStartWriting: () => void;
@@ -709,6 +710,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* Interactive scroll-driven visual story lives in its own component.        */}
       {/* ========================================================================= */}
       <WhereToUseStory onStartWriting={onStartWriting} onExploreStyles={onExploreStyles} />
+
+      {/* ========================================================================= */}
+      {/* 4b. ABOUT THE PERSON BEHIND TYPENE                                       */}
+      {/* ========================================================================= */}
+      <AboutFounder onStartWriting={onStartWriting} onExploreStyles={onExploreStyles} />
 
       {/* ========================================================================= */}
       {/* 5. FONT EXPLORER (Category Guide)                                         */}

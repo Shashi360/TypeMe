@@ -72,5 +72,8 @@ export type AppView =
   | 'explore'
   | 'quiz'
   | 'gallery'
+  | 'legal'
   | 'admin';
+
+export type LegalDoc = 'privacy' | 'terms' | 'licensing';
 
