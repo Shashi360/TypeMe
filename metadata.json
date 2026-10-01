@@ -1,0 +1,6 @@
+{
+  "name": "TypeMe - Your Handwriting. Your Font. Your Story.",
+  "description": "TypeMe turns your handwriting into a real, downloadable digital font. Write your letters, build your typeface, and use your handwriting across creative projects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
