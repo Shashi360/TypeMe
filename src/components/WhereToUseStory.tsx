@@ -55,8 +55,8 @@ const SCENES: SceneDef[] = [
     id: 'invitation',
     label: 'Invitation',
     phrase: 'Make it yours.',
-    copy: 'Add something personal to every celebration.',
-    accent: { line: '#fb7185', soft: '#ffe4e6', wash: '#fff1f2', deep: '#e11d48', label: '#9f1239', ink: '#1f2937' },
+    copy: 'Make every celebration personal.',
+    accent: { line: '#c084fc', soft: '#f3e8ff', wash: '#faf5ff', deep: '#7e22ce', label: '#6b21a8', ink: '#1f2937' },
     start: 0.2,
     end: 0.4,
   },
@@ -65,7 +65,7 @@ const SCENES: SceneDef[] = [
     label: 'Brand',
     phrase: 'Make it yours.',
     copy: 'Give your brand a human signature.',
-    accent: { line: '#f59e0b', soft: '#fef3c7', wash: '#fffbeb', deep: '#b45309', label: '#92400e', ink: '#292524' },
+    accent: { line: '#e08a4a', soft: '#fdf0e3', wash: '#fffaf4', deep: '#a9571f', label: '#8a4720', ink: '#292524' },
     start: 0.4,
     end: 0.6,
   },
@@ -73,8 +73,8 @@ const SCENES: SceneDef[] = [
     id: 'social',
     label: 'Social',
     phrase: 'Make it yours.',
-    copy: 'Make every post feel unmistakably you.',
-    accent: { line: '#a78bfa', soft: '#ede9fe', wash: '#f5f3ff', deep: '#7c3aed', label: '#5b21b6', ink: '#1f2937' },
+    copy: 'Make every post feel like you.',
+    accent: { line: '#2dd4bf', soft: '#ccfbf1', wash: '#f0fdfa', deep: '#0f766e', label: '#115e59', ink: '#1f2937' },
     start: 0.6,
     end: 0.8,
   },
@@ -82,8 +82,8 @@ const SCENES: SceneDef[] = [
     id: 'art',
     label: 'Art',
     phrase: 'Make it yours.',
-    copy: 'Turn your handwriting into part of your creative style.',
-    accent: { line: '#10b981', soft: '#d1fae5', wash: '#ecfdf5', deep: '#047857', label: '#065f46', ink: '#1f2937' },
+    copy: 'Let your handwriting become your style.',
+    accent: { line: '#fb7185', soft: '#ffe4e6', wash: '#fff7ed', deep: '#c2410c', label: '#9a3412', ink: '#1f2937' },
     start: 0.8,
     end: 0.95,
   },
@@ -91,8 +91,8 @@ const SCENES: SceneDef[] = [
     id: 'signature',
     label: 'Your Signature',
     phrase: 'Your name. Your mark.',
-    copy: '',
-    accent: { line: '#f97316', soft: '#ffedd5', wash: '#fff7ed', deep: '#c2410c', label: '#9a3412', ink: '#1c1917' },
+    copy: 'Your name. Your mark.',
+    accent: { line: '#8f8a85', soft: '#f5f5f4', wash: '#fafaf9', deep: '#57534e', label: '#57534e', ink: '#1c1917' },
     start: 0.95,
     end: 1,
   },
@@ -101,12 +101,12 @@ const SCENES: SceneDef[] = [
 /* Where the travelling phrase sits, per scene, in stage units.
    Interpolated continuously so the phrase glides rather than jumps. */
 const PHRASE_SLOTS: { x: number; y: number; scale: number; rotate: number }[] = [
-  { x: 0, y: -2, scale: 1, rotate: -1 },
-  { x: 0, y: -6, scale: 0.92, rotate: -2 },
-  { x: 1, y: -2, scale: 0.86, rotate: -4 },
-  { x: 0, y: -1, scale: 0.66, rotate: -2 },
-  { x: 0, y: -3, scale: 1.12, rotate: -3 },
-  { x: 0, y: -4, scale: 1.42, rotate: -1.5 },
+  { x: 0, y: -20, scale: 1, rotate: -1 },
+  { x: 0, y: -40, scale: 0.96, rotate: -2 },
+  { x: 0, y: -20, scale: 0.96, rotate: -3 },
+  { x: 0, y: 20, scale: 0.82, rotate: -2 },
+  { x: 0, y: -40, scale: 1.08, rotate: -3 },
+  { x: 0, y: -30, scale: 1.22, rotate: -1.5 },
 ];
 
 const KINETIC_WORDS = ['WRITE', 'CREATE', 'TYPE', 'SHARE'];
@@ -406,6 +406,8 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
   const penRef = useRef<HTMLSpanElement | null>(null);
   const railRef = useRef<HTMLDivElement | null>(null);
   const connectorRef = useRef<SVGPathElement | null>(null);
+  const finaleRef = useRef<HTMLDivElement | null>(null);
+  const typefaceRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
 
   const [reduced, setReduced] = useState(false);
@@ -442,7 +444,7 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
     const local = clamp((p - from.start) / span, 0, 1);
     const e = easeInOut(local);
     const a = PHRASE_SLOTS[slotIdx];
-    const b = PHRASE_SLOTS[Math.min(slotIdx + 1, PHRASE_SLOTS.length - 1)];
+    const b = PHRASE_SLOTS[Math.min(slotIdx + 1, SCENES.length - 1)];
     const x = lerp(a.x, b.x, e);
     const y = lerp(a.y, b.y, e);
     const sc = lerp(a.scale, b.scale, e);
@@ -450,10 +452,10 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
 
     phrase.style.setProperty('--tx', `${x}%`);
     phrase.style.setProperty('--ty', `${y}%`);
-    phrase.style.transform = `translate(-50%, -50%) translate(${x}%, ${y - p * 6}%) scale(${sc}) rotate(${rot}deg)`;
-    phrase.style.opacity = p < 0.012 ? '0' : '1';
+    phrase.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${sc}) rotate(${rot}deg)`;
+    phrase.style.opacity = p < 0.008 ? '0' : '1';
     /* written-on reveal + travelling pen tip */
-    const reveal = easeOut(clamp(p / 0.12, 0, 1));
+    const reveal = easeOut(clamp(p / 0.08, 0, 1));
     phrase.style.setProperty('--reveal', reveal.toFixed(4));
     if (penRef.current) {
       penRef.current.style.transform = `translateX(${(reveal * 100).toFixed(2)}%) rotate(${reveal < 1 ? -18 : 0}deg)`;
@@ -490,6 +492,21 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
     }
     if (railRef.current) {
       railRef.current.style.setProperty('--rp', p.toFixed(4));
+    }
+
+    /* --- final beat: ONE FONT / ENDLESS PLACES ------------------------ */
+    /* The last scene dims its surface and hands the stage to the payoff
+       line, so the visual resolves rather than simply ending. */
+    const finale = easeOut(clamp((p - 0.93) / 0.07, 0, 1));
+    if (finaleRef.current) {
+      finaleRef.current.style.opacity = finale.toFixed(3);
+      finaleRef.current.style.transform = `translateY(${((1 - finale) * 16).toFixed(2)}px)`;
+      finaleRef.current.style.pointerEvents = finale > 0.5 ? 'auto' : 'none';
+      /* the underline sketches itself in behind the payoff line */
+      finaleRef.current.style.setProperty('--d', easeOut(clamp((finale - 0.45) / 0.55, 0, 1)).toFixed(4));
+    }
+    if (typefaceRef.current) {
+      typefaceRef.current.style.opacity = (1 - finale).toFixed(3);
     }
 
     /* label/rail sync (cheap: only fires when the scene actually changes) */
@@ -543,6 +560,8 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
   }, [reduced]);
 
   const isSignature = activeScene === SCENES.length - 1;
+
+  /* HANDWRITING → TYPEFACE → EVERYWHERE, revealed in step with the scenes. */
   const KineticRail = (
     <div className="pointer-events-none select-none" aria-hidden="true">
       {KINETIC_WORDS.map((w, i) => {
@@ -564,6 +583,55 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
         );
       })}
     </div>
+  );
+
+  const Headline = () => (
+    <div className="tm-headline">
+      <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-stone-100 text-stone-500 text-[10px] font-mono uppercase tracking-[0.2em]">
+        One handwriting · Many places
+      </span>
+
+      <h2 className="mt-4 text-[clamp(1.6rem,4.4vw,3.1rem)] leading-[1.06] font-extrabold tracking-tight text-stone-900 text-balance">
+        <span className="font-handwriting font-bold text-stone-900 pr-1">Your font</span>
+        <span className="text-neutral-400"> doesn't belong in </span>
+        <span className="relative inline-block whitespace-nowrap">
+          <span className="relative z-10">one place.</span>
+          <svg
+            className="absolute -bottom-1 left-0 w-full h-[0.32em] overflow-visible"
+            viewBox="0 0 200 14"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M2 10 C 40 3, 78 12, 118 6 C 150 1.5, 176 9, 198 5"
+              fill="none"
+              stroke="url(#tm-hl)"
+              strokeWidth="5"
+              strokeLinecap="round"
+              pathLength={1}
+              className="tm-hl-stroke"
+            />
+          </svg>
+        </span>
+      </h2>
+
+      <p className="mt-4 text-[0.95rem] sm:text-lg font-medium text-stone-500 text-balance">
+        Write it once. Bring it everywhere.
+      </p>
+    </div>
+  );
+
+  /* Rendered once as a definition, then referenced twice (desktop + mobile). */
+  const headlineDefs = (
+    <svg width="0" height="0" className="absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="tm-hl" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#f97316" />
+          <stop offset="50%" stopColor="#ec4899" />
+          <stop offset="100%" stopColor="#a78bfa" />
+        </linearGradient>
+      </defs>
+    </svg>
   );
 
   const Phrase = (
@@ -612,62 +680,21 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
         }}
       />
 
-      {/* ===================== HEADLINE ===================== */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 sm:pt-28 pb-8 sm:pb-12">
-        <div className="max-w-3xl">
-          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-stone-100 text-stone-500 text-[10px] font-mono uppercase tracking-[0.2em]">
-            One handwriting · Many places
-          </span>
-
-          <h2 className="mt-5 text-[clamp(1.85rem,6.2vw,4.25rem)] leading-[1.04] font-extrabold tracking-tight text-stone-900 text-balance">
-            <span className="font-handwriting font-bold text-stone-900 pr-1">Your font</span>
-            <span className="text-neutral-400"> doesn't belong in </span>
-            <span className="relative inline-block whitespace-nowrap">
-              <span className="relative z-10">one place.</span>
-              <svg
-                className="absolute -bottom-1 left-0 w-full h-[0.32em] overflow-visible"
-                viewBox="0 0 200 14"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M2 10 C 40 3, 78 12, 118 6 C 150 1.5, 176 9, 198 5"
-                  fill="none"
-                  stroke="url(#tm-hl)"
-                  strokeWidth="5"
-                  strokeLinecap="round"
-                  pathLength={1}
-                  className="tm-hl-stroke"
-                />
-                <defs>
-                  <linearGradient id="tm-hl" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#f97316" />
-                    <stop offset="50%" stopColor="#ec4899" />
-                    <stop offset="100%" stopColor="#a78bfa" />
-                  </linearGradient>
-                </defs>
-              </svg>
-            </span>
-          </h2>
-
-          <p className="mt-5 text-base sm:text-xl font-medium text-stone-500">
-            Write it once. Bring it everywhere.
-          </p>
-        </div>
-      </div>
-
       {/* ===================== DESKTOP: STICKY SCROLL STORY =====================
           Visibility is owned by CSS (.tm-stage / .tm-stack) so that reduced
           motion can swap layouts without fighting Tailwind's lg: utilities. */}
+      {/* Final beat: the visual resolves to ONE FONT / ENDLESS PLACES while the
+          fixed headline is still on screen, then the CTA lands. */}
       <div className="tm-stage">
-        <div ref={trackRef} className="tm-track relative h-[560vh]">
+        <div ref={trackRef} className="tm-track relative h-[640vh]">
           <div className="sticky top-0 h-screen overflow-hidden flex items-center">
-            <div className="w-full max-w-6xl mx-auto px-8 grid grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-12 items-center">
-              {/* ---- narrative column ---- */}
-              <div className="relative z-20 h-[380px]">
-                {SCENES.map((s, i) => {
-                  const Surface = SURFACES[s.id];
-                  const isOn = activeScene === i;
+            <div className="w-full max-w-6xl mx-auto px-8 pt-24 grid grid-cols-[minmax(0,340px)_minmax(0,1fr)] gap-14 items-center relative">
+              {/* ---- narrative column: headline is permanently pinned here ---- */}
+              <div className="relative z-20 flex flex-col justify-center pr-6">
+                <Headline />
+                <div className="relative mt-8 h-[104px]">
+                  {SCENES.map((s, i) => {
+                    const isOn = activeScene === i;
                   return (
                     <div
                       key={s.id}
@@ -690,33 +717,35 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
                           className="w-1.5 h-1.5 rounded-full"
                           style={{ backgroundColor: s.accent.line }}
                         />
-                        {s.label}
+                        {String(i + 1).padStart(2, '0')} — {s.label}
                       </span>
 
-                      <p className="mt-4 text-[1.6rem] leading-[1.15] font-extrabold tracking-tight text-stone-900">
-                        {s.phrase}
-                      </p>
                       {s.copy && (
-                        <p className="mt-2.5 text-sm leading-relaxed text-stone-500 max-w-[30ch]">{s.copy}</p>
+                        <p className="mt-3.5 text-sm leading-relaxed text-stone-500 text-balance">{s.copy}</p>
                       )}
                     </div>
                   );
                 })}
 
-                {/* progress rail */}
-                <div className="absolute -left-7 top-1/2 -translate-y-1/2 hidden xl:block">
-                  <div ref={railRef} className="tm-rail relative flex flex-col gap-3">
-                    {SCENES.map((s, i) => (
-                      <span
-                        key={s.id}
-                        className="block w-1 rounded-full transition-all duration-500"
-                        style={{
-                          height: i === activeScene ? 22 : 8,
-                          backgroundColor: i <= activeScene ? s.accent.line : '#e7e5e4',
-                        }}
-                      />
-                    ))}
-                  </div>
+                </div>
+
+                {/* HANDWRITING → TYPEFACE → EVERYWHERE */}
+                <div className="mt-6">{KineticRail}</div>
+              </div>
+
+              {/* subtle progress indicator, kept clear of the headline */}
+              <div className="hidden xl:block absolute -left-8 top-1/2 -translate-y-1/2">
+                <div ref={railRef} className="tm-rail relative flex flex-col gap-3">
+                  {SCENES.map((s, i) => (
+                    <span
+                      key={s.id}
+                      className="block w-1 rounded-full transition-all duration-500"
+                      style={{
+                        height: i === activeScene ? 22 : 8,
+                        backgroundColor: i <= activeScene ? s.accent.line : '#e7e5e4',
+                      }}
+                    />
+                  ))}
                 </div>
               </div>
 
@@ -773,6 +802,50 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
 
                   {/* the one phrase, travelling across every surface */}
                   {Phrase}
+
+                  {/* Your typeface indicator: the same handwriting that appears
+                      in every scene, so the connection to the user's font is explicit. */}
+                  <div
+                    ref={typefaceRef}
+                    className="absolute left-1/2 -translate-x-1/2 bottom-2 z-30 select-none"
+                  >
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/85 backdrop-blur-sm border border-stone-200/80 shadow-sm">
+                      <span className="font-mono text-[9px] tracking-[0.18em] text-stone-500">
+                        YOUR TYPEFACE
+                      </span>
+                      <span className="font-handwriting text-base sm:text-lg leading-none text-stone-900">
+                        Aa Bb Cc Dd
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Final payoff, drawn over the stage as the story resolves. */}
+                  <div
+                    ref={finaleRef}
+                    className="absolute inset-0 z-30 flex flex-col items-center justify-center text-center px-6"
+                    style={{ opacity: 0, pointerEvents: 'none' }}
+                  >
+                    <p className="text-[clamp(1.6rem,4.2vw,2.9rem)] leading-[1.06] font-extrabold tracking-tight text-stone-900">
+                      <span className="block font-handwriting font-bold">One font.</span>
+                      <span className="block">Endless places.</span>
+                    </p>
+                    <svg
+                      className="mt-4 w-40 sm:w-56 h-3 overflow-visible"
+                      viewBox="0 0 200 12"
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M4 8 C 48 2, 92 11, 130 5 C 158 1, 182 7, 196 4"
+                        fill="none"
+                        stroke="#f97316"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        pathLength={1}
+                        className="tm-doodle"
+                      />
+                    </svg>
+                  </div>
                 </div>
               </div>
             </div>
@@ -781,34 +854,43 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
       </div>
 
       {/* ===================== MOBILE / TABLET: STACKED STORY ===================== */}
-      <div className="tm-stack max-w-6xl mx-auto px-4 sm:px-6 pb-6">
-        <div className="flex justify-center pb-2">{KineticRail}</div>
+      <div className="tm-stack">
+        {/* Compact sticky headline: stays visible through the mobile story. */}
+        <div className="tm-stack-head sticky top-14 z-30 bg-white/92 backdrop-blur-md border-b border-stone-200/80">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3">
+            <Headline />
+          </div>
+        </div>
+        {headlineDefs}
 
-        <div className="space-y-6 sm:space-y-8">
-          {SCENES.map((s) => {
+        <div className="flex justify-center pt-6 pb-2">{KineticRail}</div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+
+          <div className="space-y-6 sm:space-y-8 pb-6">
+            {SCENES.map((s) => {
             const Surface = SURFACES[s.id];
             return (
               <article
                 key={s.id}
                 className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
               >
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <span
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono text-[10px] font-bold uppercase tracking-[0.16em] border"
-                    style={{
-                      color: s.accent.label,
-                      borderColor: s.accent.line + '55',
-                      backgroundColor: s.accent.wash,
-                    }}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.accent.line }} />
-                    {s.label}
-                  </span>
-                  <span className="font-mono text-[10px] text-stone-300">0{SCENES.indexOf(s) + 1}</span>
-                </div>
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono text-[10px] font-bold uppercase tracking-[0.16em] border"
+                  style={{
+                    color: s.accent.label,
+                    borderColor: s.accent.line + '55',
+                    backgroundColor: s.accent.wash,
+                  }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.accent.line }} />
+                  {String(SCENES.indexOf(s) + 1).padStart(2, '0')} — {s.label}
+                </span>
 
                 {/* full-width visual, text below so nothing overlaps */}
-                <div className="relative w-full rounded-2xl overflow-hidden" style={{ backgroundColor: s.accent.wash }}>
+                <div
+                  className="relative mt-3 w-full rounded-2xl overflow-hidden"
+                  style={{ backgroundColor: s.accent.wash }}
+                >
                   <div className="px-3 py-4 sm:py-6">
                     <Surface a={s.accent} />
                   </div>
@@ -820,27 +902,23 @@ export const WhereToUseStory: React.FC<WhereToUseStoryProps> = ({ onStartWriting
                   </div>
                 </div>
 
-                <p className="mt-3 text-sm font-semibold text-stone-900">{s.label === 'Your Signature' ? s.phrase : s.phrase}</p>
-                {s.copy && <p className="mt-1 text-[13px] leading-relaxed text-stone-500">{s.copy}</p>}
+                {s.copy && <p className="mt-3 text-[13px] leading-relaxed text-stone-500">{s.copy}</p>}
               </article>
             );
           })}
+        </div>
         </div>
       </div>
 
       {/* ===================== CLOSING ===================== */}
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-24 pb-20 sm:pb-28 text-center">
         <div className="tm-closing">
-          <p className="font-handwriting text-2xl text-stone-700 leading-tight">
-            One handwriting.
-            <br />
-            Endless places.
-          </p>
-          <h3 className="mt-5 text-[clamp(1.6rem,5vw,3rem)] leading-[1.08] font-extrabold tracking-tight text-stone-900 text-balance">
-            One handwriting. Endless places.
+          <h3 className="text-[clamp(1.9rem,5.5vw,3.4rem)] leading-[1.05] font-extrabold tracking-tight text-stone-900">
+            <span className="block font-handwriting font-bold text-stone-700">One font.</span>
+            <span className="block">Endless places.</span>
           </h3>
-          <p className="mt-4 text-sm sm:text-base text-stone-500 max-w-md mx-auto leading-relaxed">
-            Create your font once and take your handwriting wherever you create.
+          <p className="mt-5 text-sm sm:text-base text-stone-500 max-w-md mx-auto leading-relaxed">
+            Create your handwriting once. Take it wherever you create.
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">

@@ -77,6 +77,26 @@
   }
 }
 
+/* The headline is the permanent anchor of the story. Desktop keeps it inside
+   the sticky left column; mobile pins a compact version under the navbar. */
+.tm-stack-head h2 {
+  font-size: clamp(1.3rem, 4.2vw, 1.75rem);
+}
+
+.tm-stack-head .tm-headline > span:first-child {
+  display: none;
+}
+
+/* Reduced: the stacked story shows the headline once, not stuck to the top. */
+@media (prefers-reduced-motion: reduce) {
+  .tm-stack-head {
+    position: static;
+    background: transparent;
+    backdrop-filter: none;
+    border-bottom: 0;
+  }
+}
+
 /* Hand-drawn marks sketch themselves in as a scene settles.
    pathLength={1} normalises every path to a single dash unit, so the dash
    offset can be driven straight from the scroll-derived --d. That keeps the
@@ -298,7 +318,7 @@
   top: 0;
   width: 2px;
   height: calc(var(--rp, 0) * 100%);
-  background: linear-gradient(180deg, #3b82f6, #fb7185, #f59e0b, #a78bfa, #10b981, #f97316);
+  background: linear-gradient(180deg, #3b82f6, #c084fc, #f59e0b, #2dd4bf, #fb7185, #78716c);
   border-radius: 2px;
 }
 

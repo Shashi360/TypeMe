@@ -41,7 +41,7 @@ for (const [prog, expect] of [
        all six labels share the narrative column and cross-fade. */
     const narrativeLabels = Array.from(
       document.querySelectorAll('.tm-stage #where-to-use span, .tm-stage span'),
-    ).filter((s) => /^(journal|invitation|brand|social|art|your signature)$/i.test((s.textContent || '').trim()));
+    ).filter((s) => /^0\d\s—\s*(journal|invitation|brand|social|art|your signature)/i.test((s.textContent || '').trim()));
     let label = '';
     for (const el of narrativeLabels) {
       let p = el;
@@ -69,7 +69,8 @@ for (const [prog, expect] of [
   const idx = EXPECT.indexOf(expect);
   check(`scene@${prog} => ${expect}`, state.top === idx, `visible=[${state.ops.map((o) => o.toFixed(2)).join(',')}]`);
   /* Scene 6 is labelled "Your Signature" in the UI, so compare on the short id. */
-  const labelId = state.label.toLowerCase().replace('your ', '');
+  /* Extract the ID part after the dash: "01 — Journal" -> journal */
+  const labelId = state.label.toLowerCase().replace(/^0\d\s—\s*/, '').replace('your signature', 'signature').replace('your ', '').trim();
   check(`  narrative label is ${expect}`, labelId === expect, `got "${state.label}"`);
   check(
     `  phrase fully on screen`,
