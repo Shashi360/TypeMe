@@ -454,6 +454,7 @@ export default function App() {
           setCurrentView('learn');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
+        currentView={currentView}
         onOpenQuiz={() => setQuizModalOpen(true)}
       />
 

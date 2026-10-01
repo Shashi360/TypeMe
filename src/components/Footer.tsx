@@ -10,6 +10,7 @@ interface FooterProps {
   onExploreStyles?: () => void;
   onOpenLearn?: () => void;
   onOpenQuiz?: () => void;
+  currentView?: AppView;
 }
 
 const LEGAL_LINKS: { doc: LegalDoc; label: string }[] = [
@@ -23,10 +24,13 @@ export const Footer: React.FC<FooterProps> = ({
   onStartWriting,
   onOpenLegal,
   onExploreStyles,
+  currentView,
 }) => {
   return (
     <footer className="border-t border-neutral-200 bg-white">
-      <FooterAboutMe onStartWriting={onStartWriting} onExploreStyles={onExploreStyles} />
+      {currentView === 'landing' ? (
+        <FooterAboutMe onStartWriting={onStartWriting} onExploreStyles={onExploreStyles} />
+      ) : null}
 
       <div className="py-14">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

@@ -28,7 +28,6 @@ import {
 
 export type PenStyle = 'gel' | 'fountain' | 'marker' | 'pencil';
 export type GuidelineStyle = 'typography' | 'notebook' | 'dots' | 'blank';
-export type EraserScale = 'small' | 'medium' | 'large';
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 interface HandwritingCanvasProps {
@@ -57,7 +56,7 @@ const GUIDELINES = {
   descender: 360,
 };
 
-const ERASER_RADIUS: Record<EraserScale, number> = { small: 16, medium: 30, large: 52 };
+const ERASER_RADIUS = { min: 6, max: 80, default: 30 };
 const PEN_WIDTHS = { Fine: 3.5, Regular: 5.5, Bold: 8 } as const;
 
 const WRITING_TIPS = [
@@ -122,7 +121,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
   const [penStyle, setPenStyle] = useState<PenStyle>('gel');
   const [strokeWidth, setStrokeWidth] = useState<number>(PEN_WIDTHS.Regular);
-  const [eraserScale, setEraserScale] = useState<EraserScale>('medium');
+  const [eraserRadius, setEraserRadius] = useState<number>(ERASER_RADIUS.default);
   const [guidelineStyle, setGuidelineStyle] = useState<GuidelineStyle>('typography');
   const [showGuidelines, setShowGuidelines] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -139,8 +138,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [tipIndex, setTipIndex] = useState(0);
   const [stageBox, setStageBox] = useState(0);
 
-  const eraserRadius = ERASER_RADIUS[eraserScale];
-  const activeStrokes = activeVariant === -1 ? strokes : variants[activeVariant] ?? [];
+
 
   // ---------------------------------------------------------------- rendering
   // Everything the renderer needs is mirrored into a ref so a frame that is
@@ -407,8 +405,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   }, []);
 
   const quality = useMemo(
-    () => analyzeCharacterStrokes(activeStrokes, VIRTUAL_WIDTH, VIRTUAL_HEIGHT),
-    [activeStrokes],
+    () => analyzeCharacterStrokes((activeVariant === -1 ? strokes : variants[activeVariant] ?? []), VIRTUAL_WIDTH, VIRTUAL_HEIGHT),
+    [(activeVariant === -1 ? strokes : variants[activeVariant] ?? [])],
   );
 
   const done = completedCount ?? allCharacterList.filter((c) => c.hasStrokes).length;
@@ -451,23 +449,23 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     if (undoStack.length === 0) return;
     const previous = undoStack[undoStack.length - 1];
     setUndoStack((prev) => prev.slice(0, -1));
-    setRedoStack((prev) => [...prev, clone(activeStrokes)]);
+    setRedoStack((prev) => [...prev, clone((activeVariant === -1 ? strokes : variants[activeVariant] ?? []))]);
     writeStrokes(clone(previous));
-  }, [undoStack, activeStrokes, writeStrokes]);
+  }, [undoStack, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), writeStrokes]);
 
   const redo = useCallback(() => {
     if (redoStack.length === 0) return;
     const next = redoStack[redoStack.length - 1];
     setRedoStack((prev) => prev.slice(0, -1));
-    setUndoStack((prev) => [...prev, clone(activeStrokes)]);
+    setUndoStack((prev) => [...prev, clone((activeVariant === -1 ? strokes : variants[activeVariant] ?? []))]);
     writeStrokes(clone(next));
-  }, [redoStack, activeStrokes, writeStrokes]);
+  }, [redoStack, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), writeStrokes]);
 
   const clear = useCallback(() => {
-    if (activeStrokes.length === 0) return;
-    pushUndo(activeStrokes);
+    if ((activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0) return;
+    pushUndo((activeVariant === -1 ? strokes : variants[activeVariant] ?? []));
     writeStrokes([]);
-  }, [activeStrokes, pushUndo, writeStrokes]);
+  }, [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []), pushUndo, writeStrokes]);
 
   // ------------------------------------------------------------------ canvas
   const toCanvasPoint = useCallback(
@@ -501,7 +499,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       const radius = eraserRadius;
       const next: Stroke[] = [];
       let changed = false;
-      activeStrokes.forEach((stroke) => {
+      (activeVariant === -1 ? strokes : variants[activeVariant] ?? []).forEach((stroke) => {
         const survivors = stroke.filter((p) => Math.hypot(p.x - point.x, p.y - point.y) > radius);
         if (survivors.length !== stroke.length) {
           changed = true;
@@ -513,11 +511,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       if (!changed) return;
       if (!erasingRef.current) {
         erasingRef.current = true;
-        pushUndo(activeStrokes);
+        pushUndo((activeVariant === -1 ? strokes : variants[activeVariant] ?? []));
       }
       writeStrokes(next);
     },
-    [activeStrokes, eraserRadius, pushUndo, writeStrokes],
+    [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []), eraserRadius, pushUndo, writeStrokes],
   );
 
   const handlePointerDown = useCallback(
@@ -539,11 +537,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         eraseAt(point);
         return;
       }
-      pushUndo(activeStrokes);
+      pushUndo((activeVariant === -1 ? strokes : variants[activeVariant] ?? []));
       activeStrokeRef.current = [point];
       schedulePaint();
     },
-    [tool, toCanvasPoint, eraseAt, pushUndo, activeStrokes, schedulePaint],
+    [tool, toCanvasPoint, eraseAt, pushUndo, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), schedulePaint],
   );
 
   const handlePointerMove = useCallback(
@@ -605,16 +603,16 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         schedulePaint();
         return;
       }
-      writeStrokes([...activeStrokes, finished]);
+      writeStrokes([...(activeVariant === -1 ? strokes : variants[activeVariant] ?? []), finished]);
     },
-    [tool, writeStrokes, activeStrokes, schedulePaint],
+    [tool, writeStrokes, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), schedulePaint],
   );
 
   // ------------------------------------------------------------------ saving
   const commit = useCallback((): boolean => {
-    const primary = activeVariant === -1 ? activeStrokes : primaryRef.current;
+    const primary = activeVariant === -1 ? (activeVariant === -1 ? strokes : variants[activeVariant] ?? []) : primaryRef.current;
     const finalVariants =
-      activeVariant === -1 ? variants : variants.map((v, i) => (i === activeVariant ? activeStrokes : v));
+      activeVariant === -1 ? variants : variants.map((v, i) => (i === activeVariant ? (activeVariant === -1 ? strokes : variants[activeVariant] ?? []) : v));
     try {
       onSave(character.char, clone(primary), finalVariants.length ? clone(finalVariants) : undefined);
       if (activeVariant === -1) primaryRef.current = clone(primary);
@@ -623,10 +621,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     } catch {
       return false;
     }
-  }, [activeVariant, activeStrokes, variants, character.char, onSave]);
+  }, [activeVariant, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), variants, character.char, onSave]);
 
   const performSave = useCallback(() => {
-    if (activeStrokes.length === 0) {
+    if ((activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0) {
       commit();
       setSaveState('saved');
       window.setTimeout(() => setSaveState('idle'), 1200);
@@ -637,7 +635,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       setSaveState(commit() ? 'saved' : 'error');
       window.setTimeout(() => setSaveState((s) => (s === 'error' ? 'error' : 'idle')), 1600);
     }, 260);
-  }, [activeStrokes.length, commit]);
+  }, [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length, commit]);
 
   // Autosave: debounced so pointer movement never triggers it.
   useEffect(() => {
@@ -649,7 +647,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       }, 200);
     }, 1400);
     return () => window.clearTimeout(id);
-  }, [activeStrokes, commit]);
+  }, [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []), commit]);
 
   // Milestones fire once, the first time the count crosses a threshold.
   useEffect(() => {
@@ -663,7 +661,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
   const saveAndGo = useCallback(
     (go?: () => void) => {
-      if (activeStrokes.length === 0) {
+      if ((activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0) {
         commit();
         go?.();
         return;
@@ -679,7 +677,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           }, 1600);
       }, 260);
     },
-    [activeStrokes.length, commit],
+    [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length, commit],
   );
 
   // Smart next: jump to the next character that still needs work.
@@ -719,7 +717,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
   const confirmVariantDelete = useCallback(
     (index: number) => {
-      const target = index === activeVariant ? activeStrokes : variants[index] ?? [];
+      const target = index === activeVariant ? (activeVariant === -1 ? strokes : variants[activeVariant] ?? []) : variants[index] ?? [];
       if (target.length === 0) {
         setVariants((prev) => prev.filter((_, i) => i !== index));
         if (activeVariant === index) setActiveVariant(-1);
@@ -727,7 +725,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       }
       setVariantToDelete(index);
     },
-    [activeVariant, activeStrokes, variants],
+    [activeVariant, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), variants],
   );
 
   const performVariantDelete = useCallback(() => {
@@ -824,11 +822,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     };
   }, [showShortcuts]);
 
-  const renderStage = (pad: string) => (
-    <div
-      ref={stageRef}
-      className={`flex min-h-0 flex-1 items-center justify-center overflow-hidden ${pad}`}
-    >
+  const renderStage = () => (
+<div
+       ref={stageRef}
+       className="flex min-h-0 flex-1 items-center justify-center px-3 py-3 sm:px-4 sm:py-4"
+     >
       <div
         data-testid="handwriting-stage"
         className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm"
@@ -865,7 +863,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             }}
           />
         ) : null}
-        {activeStrokes.length === 0 && activeStrokeRef.current.length === 0 ? (
+        {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0 && activeStrokeRef.current.length === 0 ? (
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 bottom-6 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-stone-300"
@@ -1152,7 +1150,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       type="button"
                       onClick={() => setPenStyle(s)}
                       aria-pressed={penStyle === s}
-                      className={`cursor-pointer rounded-md border px-1 py-1.5 text-[10px] capitalize leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
+                      className={`cursor-pointer rounded-md border px-1 py-1 text-[10px] capitalize leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
                         penStyle === s
                           ? 'border-neutral-900 bg-neutral-900 text-white'
                           : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
@@ -1163,22 +1161,21 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   ))}
                 </div>
               ) : (
-                <div className="grid shrink-0 grid-cols-3 gap-1">
-                  {(['small', 'medium', 'large'] as EraserScale[]).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setEraserScale(s)}
-                      aria-pressed={eraserScale === s}
-                      className={`cursor-pointer rounded-md border px-1 py-1.5 text-[10px] capitalize leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                        eraserScale === s
-                          ? 'border-neutral-900 bg-neutral-900 text-white'
-                          : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                      }`}
-                    >
-                      {s}
-                    </button>
-                  ))}
+                <div className="flex shrink-0 flex-col gap-1.5">
+                  <div className="flex items-center justify-between px-0.5 text-[10px] text-neutral-500">
+                    <span>Eraser size</span>
+                    <span className="font-mono tabular-nums">{Math.round(eraserRadius)}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={ERASER_RADIUS.min}
+                    max={ERASER_RADIUS.max}
+                    step={1}
+                    value={eraserRadius}
+                    onChange={(e) => setEraserRadius(Number(e.target.value))}
+                    aria-label="Eraser size"
+                    className="w-full cursor-grab active:cursor-grabbing"
+                  />
                 </div>
               )}
 
@@ -1286,10 +1283,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
               <div className="mt-auto flex shrink-0 items-start gap-1.5 border-t border-neutral-100 pt-2 text-[10px] leading-snug">
                 <span data-testid="editor-stroke-count" className="shrink-0 font-mono text-neutral-500">
-                  {activeStrokes.length}
-                  {activeStrokes.length === 1 ? ' stroke' : ' strokes'}
+                  {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length}
+                  {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 1 ? ' stroke' : ' strokes'}
                 </span>
-                {activeStrokes.length === 0 ? (
+                {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0 ? (
                   <span className="truncate text-neutral-400">Start writing \u2014 nothing is lost, it autosaves.</span>
                 ) : (
                   <span
@@ -1309,23 +1306,22 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
         </aside>
         {/* ------------------------------------------------- RIGHT: editor */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-50">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-neutral-200 bg-white px-4 py-2">
-            <p className="flex items-baseline gap-2">
-              <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">Writing</span>
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-neutral-50">
+          <div className="flex shrink-0 items-center justify-center border-b border-neutral-200 bg-white px-3 py-2">
+            <div className="flex items-center gap-2">
               <span
                 data-testid="editor-current-char"
-                className="font-serif text-lg font-semibold leading-none text-neutral-900"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 font-serif text-lg font-semibold leading-none text-neutral-900"
               >
                 {character.char}
               </span>
-            </p>
-            {milestone ? (
-              <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700">
-                <Sparkles className="h-3 w-3 shrink-0" />
-                <span className="truncate">{milestone}</span>
-              </span>
-            ) : null}
+              {milestone ? (
+                <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700">
+                  <Sparkles className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{milestone}</span>
+                </span>
+              ) : null}
+            </div>
           </div>
 
           {variantToDelete !== null ? (
@@ -1353,7 +1349,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             </div>
           ) : null}
 
-          {renderStage(isExpanded ? '' : 'px-0 py-0')}
+          {renderStage()}
 
           {/* sticky action bar */}
           <div className="shrink-0 border-t border-neutral-200 bg-white px-3 py-2.5 sm:px-4">
@@ -1380,7 +1376,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 <button
                   type="button"
                   onClick={clear}
-                  disabled={activeStrokes.length === 0}
+                  disabled={(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0}
                   className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-2 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
