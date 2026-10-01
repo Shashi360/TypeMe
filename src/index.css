@@ -46,4 +46,357 @@
   animation: marquee 25s linear infinite;
 }
 
+/* ===========================================================================
+   "Your font doesn't belong in one place." scroll story
+   Scroll progress is written to --p / --d custom properties from rAF, so these
+   rules stay on the compositor and never trigger a React render.
+   =========================================================================== */
+
+.tm-track {
+  /* journey length drives how far the sticky stage travels */
+  --p: 0;
+}
+
+/* Layout swap lives here, not in Tailwind utilities, so the reduced-motion
+   block below can override it cleanly. */
+.tm-stage {
+  display: none;
+}
+
+.tm-stack {
+  display: block;
+}
+
+@media (min-width: 1024px) {
+  .tm-stage {
+    display: block;
+  }
+
+  .tm-stack {
+    display: none;
+  }
+}
+
+/* Hand-drawn marks sketch themselves in as a scene settles.
+   pathLength={1} normalises every path to a single dash unit, so the dash
+   offset can be driven straight from the scroll-derived --d. That keeps the
+   "being drawn in real time" effect tied to scroll position rather than
+   firing once on mount. */
+.tm-doodle {
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--d, 0));
+}
+
+.tm-doodle-fill {
+  fill: currentColor;
+  stroke: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: clamp(0, calc(var(--d, 0) * 2.4 - 1.4), 1);
+  transform: scale(calc(0.4 + var(--d, 0) * 0.6));
+}
+
+/* Doodles fade in as their scene settles, driven by --d from rAF. */
+.tm-doodle-wrap {
+  color: var(--dc, #a8a29e);
+  opacity: clamp(0, calc(var(--d, 0) * 1.6 - 0.4), 1);
+  transform: scale(calc(0.86 + var(--d, 0) * 0.14)) rotate(calc((1 - var(--d, 0)) * -4deg));
+}
+
+/* --- travelling handwriting phrase ------------------------------------- */
+.tm-phrase {
+  will-change: transform, opacity;
+}
+
+.tm-phrase-text {
+  font-size: clamp(2rem, 7.2vw, 3.75rem);
+  color: #1c1917;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+/* Reveals left-to-right so the phrase reads as if it is being written. */
+.tm-phrase-text {
+  clip-path: inset(0 calc((1 - var(--reveal, 1)) * 100%) 0 0);
+}
+
+.tm-pen {
+  transition: opacity 0.4s ease-out;
+}
+
+/* --- surfaces settle onto the stage ------------------------------------ */
+.tm-scene {
+  will-change: transform, opacity;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.tm-surface-journal,
+.tm-surface-invitation,
+.tm-surface-brand,
+.tm-surface-social,
+.tm-surface-art,
+.tm-surface-signature {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* notebook gently opens */
+.tm-surface-journal {
+  animation: tm-open 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-surface-invitation {
+  animation: tm-slide-paper 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-surface-brand {
+  animation: tm-turn-pack 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-surface-social {
+  animation: tm-slide-phone 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-surface-art {
+  animation: tm-enter-poster 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-surface-signature {
+  animation: tm-surface-in 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-surface-brand-mark {
+  animation: tm-pop 0.6s 0.25s ease-out both;
+}
+
+.tm-surface-social-hearts {
+  animation: tm-beat 2.4s 0.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tm-surface-art-shape {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tm-drift 6s ease-in-out infinite alternate;
+}
+
+@keyframes tm-open {
+  from {
+    transform: perspective(700px) rotateY(-26deg) scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: perspective(700px) rotateY(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes tm-slide-paper {
+  from {
+    transform: translateX(-14%) rotate(-2deg);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes tm-turn-pack {
+  from {
+    transform: perspective(800px) rotateY(-30deg) rotate(-3deg);
+    opacity: 0;
+  }
+  to {
+    transform: perspective(800px) rotateY(0deg) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes tm-slide-phone {
+  from {
+    transform: translateX(16%) translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes tm-enter-poster {
+  from {
+    transform: scale(0.88) translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes tm-surface-in {
+  from {
+    transform: scale(0.94);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes tm-beat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  12% {
+    transform: scale(1.12);
+  }
+  24% {
+    transform: scale(1);
+  }
+}
+
+@keyframes tm-drift {
+  from {
+    transform: translate(-2px, 2px);
+  }
+  to {
+    transform: translate(3px, -3px);
+  }
+}
+
+/* --- the travelling pen connector (accent, never black) ----------------- */
+.tm-connector {
+  stroke: #f59e0b;
+  stroke-width: 0.5;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0.5;
+}
+
+/* --- progress rail ------------------------------------------------------ */
+.tm-rail::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: #f5f5f4;
+  border-radius: 2px;
+}
+
+.tm-rail::after {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0;
+  width: 2px;
+  height: calc(var(--rp, 0) * 100%);
+  background: linear-gradient(180deg, #3b82f6, #fb7185, #f59e0b, #a78bfa, #10b981, #f97316);
+  border-radius: 2px;
+}
+
+/* --- headline highlight -------------------------------------------------- */
+.tm-hl-stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: tm-hl-draw 1.4s 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes tm-hl-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* --- closing reveal ------------------------------------------------------ */
+.tm-closing > * {
+  animation: tm-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-closing > *:nth-child(2) {
+  animation-delay: 0.08s;
+}
+.tm-closing > *:nth-child(3) {
+  animation-delay: 0.16s;
+}
+.tm-closing > *:nth-child(4) {
+  animation-delay: 0.24s;
+}
+
+@keyframes tm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===========================================================================
+   Reduced motion: keep every visual, drop the movement.
+   Scenes stack as plain cards, the phrase stops travelling, doodles stay
+   drawn, and nothing animates on scroll.
+   =========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .tm-hl-stroke,
+  .tm-surface-journal,
+  .tm-surface-invitation,
+  .tm-surface-brand,
+  .tm-surface-social,
+  .tm-surface-art,
+  .tm-surface-signature,
+  .tm-surface-brand-mark,
+  .tm-surface-art-shape,
+  .tm-surface-social-hearts,
+  .tm-closing > * {
+    animation: none !important;
+  }
+
+  .tm-doodle,
+  .tm-hl-stroke,
+  .tm-connector {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  .tm-doodle-fill {
+    opacity: 1;
+    transform: none;
+  }
+
+  .tm-doodle-wrap {
+    opacity: 1;
+    transform: none;
+  }
+
+  .tm-phrase-text {
+    clip-path: none;
+  }
+
+  /* Hide the sticky scroll stage everywhere; the stacked cards carry the
+     same story with simple fades instead of movement. */
+  .tm-stage {
+    display: none !important;
+  }
+
+  .tm-stack {
+    display: block !important;
+  }
+
+  .tm-stack article {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+
 
