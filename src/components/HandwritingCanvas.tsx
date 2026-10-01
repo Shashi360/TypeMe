@@ -51,23 +51,21 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   onSelectCharacter,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const drawingInProgressRef = useRef<boolean>(false);
 
-  // Active strokes and undo/redo stacks
   const [strokes, setStrokes] = useState<Stroke[]>(() => {
     return character.strokes ? JSON.parse(JSON.stringify(character.strokes)) : [];
   });
   const [undoStack, setUndoStack] = useState<Stroke[][]>([]);
   const [redoStack, setRedoStack] = useState<Stroke[][]>([]);
 
-  // Variants state (a1, a2, etc.)
-  const [activeVariantIndex, setActiveVariantIndex] = useState<number>(-1); // -1 = primary, 0, 1 = alternates
+  const [activeVariantIndex, setActiveVariantIndex] = useState<number>(-1);
   const [variants, setVariants] = useState<Stroke[][]>(() => {
     return character.variants ? JSON.parse(JSON.stringify(character.variants)) : [];
   });
-  // Variant delete confirmation modal state
   const [variantToDelete, setVariantToDelete] = useState<number | null>(null);
 
-  // Tool & drawing settings
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
   const [penStyle, setPenStyle] = useState<PenStyle>('gel');
   const [strokeWidth, setStrokeWidth] = useState<number>(5);
@@ -78,7 +76,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [showShortcuts, setShowShortcuts] = useState<boolean>(false);
 
-  // Eraser scale radius map
   const eraserRadiusMap: Record<EraserScale, number> = {
     small: 8,
     medium: 18,
@@ -86,23 +83,17 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   };
   const currentEraserRadius = eraserRadiusMap[eraserScale];
 
-  // Quality check state
   const [quality, setQuality] = useState(() => analyzeCharacterStrokes(strokes, 400, 400));
   const [eraserMousePos, setEraserMousePos] = useState<{ x: number; y: number } | null>(null);
   const [isHoveringCanvas, setIsHoveringCanvas] = useState(false);
 
-  // Current stroke being drawn
   const currentStrokeRef = useRef<Point[]>([]);
-  // Track active pointer type for palm rejection
   const activePointerTypeRef = useRef<string | null>(null);
-  // Track whether eraser drag operation already pushed undo state
   const isEraserDraggingRef = useRef<boolean>(false);
 
-  // Canvas virtual dimensions
   const VIRTUAL_WIDTH = 400;
   const VIRTUAL_HEIGHT = 400;
 
-  // Guidelines positions (virtual coords)
   const GUIDELINES = {
     ascender: 60,
     capHeight: 110,
@@ -111,1097 +102,709 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     descender: 360,
   };
 
-  // Sync state whenever the target character changes
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
+
   useEffect(() => {
     setStrokes(character.strokes ? JSON.parse(JSON.stringify(character.strokes)) : []);
     setVariants(character.variants ? JSON.parse(JSON.stringify(character.variants)) : []);
     setActiveVariantIndex(-1);
     setUndoStack([]);
     setRedoStack([]);
-  }, [character.char, character.strokes, character.variants]);
+  }, [character.char]);
 
-  // Run quality check whenever strokes change
   useEffect(() => {
     setQuality(analyzeCharacterStrokes(strokes, VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
   }, [strokes]);
 
-  // Redraw canvas with high precision
-  const redrawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(dpr, dpr);
-
-    // 1. Draw background guidelines
-    if (showGuidelines && guidelineStyle !== 'blank') {
-      if (guidelineStyle === 'typography') {
-        // Ascender
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(16, GUIDELINES.ascender);
-        ctx.lineTo(VIRTUAL_WIDTH - 16, GUIDELINES.ascender);
-        ctx.stroke();
-
-        // Cap Height
-        ctx.beginPath();
-        ctx.moveTo(16, GUIDELINES.capHeight);
-        ctx.lineTo(VIRTUAL_WIDTH - 16, GUIDELINES.capHeight);
-        ctx.stroke();
-
-        // Midline (x-height)
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.beginPath();
-        ctx.moveTo(16, GUIDELINES.midline);
-        ctx.lineTo(VIRTUAL_WIDTH - 16, GUIDELINES.midline);
-        ctx.stroke();
-
-        // Baseline (solid, prominent)
-        ctx.setLineDash([]);
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(16, GUIDELINES.baseline);
-        ctx.lineTo(VIRTUAL_WIDTH - 16, GUIDELINES.baseline);
-        ctx.stroke();
-
-        // Descender
-        ctx.setLineDash([4, 4]);
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(16, GUIDELINES.descender);
-        ctx.lineTo(VIRTUAL_WIDTH - 16, GUIDELINES.descender);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      } else if (guidelineStyle === 'notebook') {
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = 1;
-        for (let y = 50; y <= 350; y += 30) {
-          ctx.beginPath();
-          ctx.moveTo(16, y);
-          ctx.lineTo(VIRTUAL_WIDTH - 16, y);
-          ctx.stroke();
-        }
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(16, GUIDELINES.baseline);
-        ctx.lineTo(VIRTUAL_WIDTH - 16, GUIDELINES.baseline);
-        ctx.stroke();
-      } else if (guidelineStyle === 'dots') {
-        ctx.fillStyle = '#cbd5e1';
-        for (let x = 30; x <= 370; x += 30) {
-          for (let y = 30; y <= 370; y += 30) {
-            ctx.beginPath();
-            ctx.arc(x, y, 1.25, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([6, 4]);
-        ctx.beginPath();
-        ctx.moveTo(20, GUIDELINES.baseline);
-        ctx.lineTo(VIRTUAL_WIDTH - 20, GUIDELINES.baseline);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
-
-    // 2. Reference ghost character in faint gray if empty
-    if (strokes.length === 0 && currentStrokeRef.current.length === 0) {
-      ctx.save();
-      ctx.font = '240px "Plus Jakarta Sans", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.04)';
-      ctx.fillText(character.char, VIRTUAL_WIDTH / 2, GUIDELINES.baseline);
-      ctx.restore();
-    }
-
-    // 3. Helper to draw smooth strokes
-    const drawStroke = (pts: Point[], width: number, isCurrent = false) => {
-      if (pts.length === 0) return;
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      if (penStyle === 'fountain') {
-        ctx.strokeStyle = '#1e293b';
-        if (pts.length === 1) {
-          ctx.fillStyle = '#1e293b';
-          ctx.beginPath();
-          ctx.arc(pts[0].x, pts[0].y, width / 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          return;
-        }
-
-        for (let i = 0; i < pts.length - 1; i++) {
-          const p1 = pts[i];
-          const p2 = pts[i + 1];
-          const dx = p2.x - p1.x;
-          const dy = p2.y - p1.y;
-          const angle = Math.atan2(dy, dx);
-          const angleDiff = Math.abs(Math.cos(angle - Math.PI / 4));
-          const effectiveWidth = Math.max(2, width * (0.6 + angleDiff * 0.8));
-
-          ctx.lineWidth = effectiveWidth;
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
-        }
-      } else if (penStyle === 'marker') {
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = width * 1.35;
-        if (pts.length === 1) {
-          ctx.fillStyle = '#0f172a';
-          ctx.beginPath();
-          ctx.arc(pts[0].x, pts[0].y, (width * 1.35) / 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          return;
-        }
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length - 1; i++) {
-          const xc = (pts[i].x + pts[i + 1].x) / 2;
-          const yc = (pts[i].y + pts[i + 1].y) / 2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-        }
-        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        ctx.stroke();
-      } else if (penStyle === 'pencil') {
-        ctx.strokeStyle = '#334155';
-        ctx.lineWidth = Math.max(2.5, width * 0.85);
-        if (pts.length === 1) {
-          ctx.fillStyle = '#334155';
-          ctx.beginPath();
-          ctx.arc(pts[0].x, pts[0].y, (width * 0.85) / 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          return;
-        }
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length - 1; i++) {
-          const xc = (pts[i].x + pts[i + 1].x) / 2;
-          const yc = (pts[i].y + pts[i + 1].y) / 2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-        }
-        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        ctx.stroke();
-      } else {
-        // Gel Pen
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = width;
-        if (pts.length === 1) {
-          ctx.fillStyle = '#1e293b';
-          ctx.beginPath();
-          ctx.arc(pts[0].x, pts[0].y, width / 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          return;
-        }
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length - 1; i++) {
-          const xc = (pts[i].x + pts[i + 1].x) / 2;
-          const yc = (pts[i].y + pts[i + 1].y) / 2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-        }
-        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    };
-
-    // Draw all completed strokes
-    for (const stroke of strokes) {
-      drawStroke(stroke, strokeWidth);
-    }
-
-    // Draw current active stroke
-    if (currentStrokeRef.current.length > 0) {
-      drawStroke(currentStrokeRef.current, strokeWidth, true);
-    }
-
-    ctx.restore();
-  }, [strokes, showGuidelines, guidelineStyle, strokeWidth, penStyle, character.char]);
-
-  // Canvas resize and high-DPI scaling
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = VIRTUAL_WIDTH * dpr;
-    canvas.height = VIRTUAL_HEIGHT * dpr;
-    redrawCanvas();
-  }, [redrawCanvas, isExpanded]);
+    const current = activeVariantIndex === -1 ? strokes : variants[activeVariantIndex] || [];
+    setQuality(analyzeCharacterStrokes(current, VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+  }, [activeVariantIndex, variants]);
 
-  // Coordinates mapping from screen to 400x400 virtual space
-  const getCoordinates = (e: React.PointerEvent<HTMLCanvasElement>): Point => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = VIRTUAL_WIDTH / rect.width;
-    const scaleY = VIRTUAL_HEIGHT / rect.height;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
-      pressure: e.pressure > 0 ? e.pressure : 0.5,
-    };
-  };
-
-  // TRUE DRAG ERASER (Removes local points and splits strokes; does NOT wipe entire stroke on tap)
-  const eraseAlongDragPoint = (point: Point) => {
-    const radius = currentEraserRadius;
-    let hasModified = false;
-    const newStrokes: Stroke[] = [];
-
-    for (const stroke of strokes) {
-      const touchesEraser = stroke.some(
-        (pt) => Math.hypot(pt.x - point.x, pt.y - point.y) <= radius
-      );
-
-      if (!touchesEraser) {
-        newStrokes.push(stroke);
-        continue;
-      }
-
-      hasModified = true;
-      // Split stroke into subsegments by omitting points inside eraser radius
-      let subsegment: Point[] = [];
-      for (const pt of stroke) {
-        if (Math.hypot(pt.x - point.x, pt.y - point.y) > radius) {
-          subsegment.push(pt);
-        } else {
-          if (subsegment.length > 0) {
-            newStrokes.push(subsegment);
-            subsegment = [];
-          }
-        }
-      }
-      if (subsegment.length > 0) {
-        newStrokes.push(subsegment);
-      }
-    }
-
-    if (hasModified) {
-      if (!isEraserDraggingRef.current) {
-        setUndoStack((prev) => [...prev, strokes]);
-        setRedoStack([]);
-        isEraserDraggingRef.current = true;
-      }
-      setStrokes(newStrokes);
-    }
-  };
-
-  // Pointer event handlers with palm rejection support
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-
-    if (activePointerTypeRef.current === 'pen' && e.pointerType === 'touch') {
-      return;
-    }
-    activePointerTypeRef.current = e.pointerType;
-
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setIsDrawing(true);
-    const point = getCoordinates(e);
-
-    if (tool === 'eraser') {
-      isEraserDraggingRef.current = false;
-      eraseAlongDragPoint(point);
-      return;
-    }
-
-    currentStrokeRef.current = [point];
-    redrawCanvas();
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    e.preventDefault();
-
-    if (activePointerTypeRef.current === 'pen' && e.pointerType === 'touch') {
-      return;
-    }
-
-    const point = getCoordinates(e);
-
-    if (tool === 'eraser') {
-      eraseAlongDragPoint(point);
-      return;
-    }
-
-    // Micro-jitter threshold filter
-    const pts = currentStrokeRef.current;
-    if (pts.length > 0) {
-      const last = pts[pts.length - 1];
-      const dist = Math.hypot(point.x - last.x, point.y - last.y);
-      if (dist < 2.0) return;
-    }
-
-    currentStrokeRef.current.push(point);
-    redrawCanvas();
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    e.preventDefault();
-    setIsDrawing(false);
-    isEraserDraggingRef.current = false;
-
-    if (tool === 'eraser') {
-      return;
-    }
-
-    if (currentStrokeRef.current.length > 0) {
-      const newStrokes = [...strokes, [...currentStrokeRef.current]];
-      setUndoStack((prev) => [...prev, strokes]);
-      setRedoStack([]);
-      setStrokes(newStrokes);
-      currentStrokeRef.current = [];
-    }
-  };
-
-  // Undo / Redo / Clear
-  const handleUndo = useCallback(() => {
-    if (undoStack.length === 0) return;
-    const previous = undoStack[undoStack.length - 1];
-    setUndoStack((prev) => prev.slice(0, prev.length - 1));
-    setRedoStack((prev) => [...prev, strokes]);
-    setStrokes(previous);
-  }, [undoStack, strokes]);
-
-  const handleRedo = useCallback(() => {
-    if (redoStack.length === 0) return;
-    const next = redoStack[redoStack.length - 1];
-    setRedoStack((prev) => prev.slice(0, prev.length - 1));
-    setUndoStack((prev) => [...prev, strokes]);
-    setStrokes(next);
-  }, [redoStack, strokes]);
-
-  const handleClear = () => {
-    if (strokes.length === 0) return;
-    setUndoStack((prev) => [...prev, strokes]);
-    setRedoStack([]);
-    setStrokes([]);
-    currentStrokeRef.current = [];
-  };
-
-  // Switch between primary character and alternate variations (a1, a2...)
-  const handleSelectVariant = (index: number) => {
-    let updatedVariants = [...variants];
+  useEffect(() => {
     if (activeVariantIndex === -1) {
-      // primary
-    } else {
-      updatedVariants[activeVariantIndex] = strokes;
-      setVariants(updatedVariants);
+      setStrokes((prev) => {
+        const next = [...prev];
+        return next;
+      });
     }
+  }, [activeVariantIndex]);
 
-    setActiveVariantIndex(index);
-    if (index === -1) {
-      setStrokes(character.strokes ? JSON.parse(JSON.stringify(character.strokes)) : []);
-    } else {
-      const vStrokes = updatedVariants[index] || [];
-      setStrokes(JSON.parse(JSON.stringify(vStrokes)));
-    }
-    setUndoStack([]);
+  const pushUndo = useCallback((state: Stroke[]) => {
+    setUndoStack((prev) => {
+      const next = [...prev, JSON.parse(JSON.stringify(state))];
+      if (next.length > 50) next.shift();
+      return next;
+    });
     setRedoStack([]);
-  };
+  }, []);
 
-  const handleAddVariant = () => {
-    if (variants.length >= 3) return;
-    const newVariants = [...variants, []];
-    setVariants(newVariants);
-    handleSelectVariant(newVariants.length - 1);
-  };
-
-  // Delete variant request handler
-  const handleDeleteVariantTrigger = (e: React.MouseEvent, index: number) => {
-    e.stopPropagation();
-    const targetVariantStrokes =
-      index === activeVariantIndex ? strokes : variants[index] || [];
-
-    // If blank (no strokes written), delete immediately without asking!
-    if (!targetVariantStrokes || targetVariantStrokes.length === 0) {
-      performDeleteVariant(index);
+  const undo = useCallback(() => {
+    if (undoStack.length === 0) return;
+    const last = undoStack[undoStack.length - 1];
+    setUndoStack((prev) => prev.slice(0, -1));
+    if (activeVariantIndex === -1) {
+      setRedoStack((prev) => [...prev, JSON.parse(JSON.stringify(strokes))]);
+      setStrokes(last);
     } else {
-      // If something was written, open confirm dialog!
-      setVariantToDelete(index);
+      setRedoStack((prev) => [...prev, JSON.parse(JSON.stringify(variants[activeVariantIndex] || []))]);
+      setVariants((prev) => {
+        const next = [...prev];
+        next[activeVariantIndex] = last;
+        return next;
+      });
     }
-  };
+  }, [undoStack, strokes, variants, activeVariantIndex]);
 
-  // Perform variant deletion
-  const performDeleteVariant = (index: number) => {
-    const updatedVariants = variants.filter((_, i) => i !== index);
-    setVariants(updatedVariants);
-    setVariantToDelete(null);
-
-    let nextPrimary = character.strokes || [];
-    if (activeVariantIndex === index) {
-      // Switch back to primary
-      setActiveVariantIndex(-1);
-      setStrokes(JSON.parse(JSON.stringify(nextPrimary)));
-      onSave(character.char, nextPrimary, updatedVariants);
+  const redo = useCallback(() => {
+    if (redoStack.length === 0) return;
+    const nextState = redoStack[redoStack.length - 1];
+    setRedoStack((prev) => prev.slice(0, -1));
+    if (activeVariantIndex === -1) {
+      setUndoStack((prev) => [...prev, JSON.parse(JSON.stringify(strokes))]);
+      setStrokes(nextState);
     } else {
-      const newActive = activeVariantIndex > index ? activeVariantIndex - 1 : activeVariantIndex;
-      setActiveVariantIndex(newActive);
-      onSave(character.char, strokes, updatedVariants);
+      setUndoStack((prev) => [...prev, JSON.parse(JSON.stringify(variants[activeVariantIndex] || []))]);
+      setVariants((prev) => {
+        const next = [...prev];
+        next[activeVariantIndex] = nextState;
+        return next;
+      });
     }
-  };
+  }, [redoStack, strokes, variants, activeVariantIndex]);
 
-  // Commit and save helper
-  const commitCurrentStrokes = useCallback(() => {
-    let finalPrimary = strokes;
-    let finalVariants = variants;
-
-    if (activeVariantIndex !== -1) {
-      finalVariants = [...variants];
-      finalVariants[activeVariantIndex] = strokes;
-      finalPrimary = character.strokes || [];
+  const clearCanvas = useCallback(() => {
+    if (activeVariantIndex === -1) {
+      if (strokes.length === 0) return;
+      pushUndo(strokes);
+      setStrokes([]);
+    } else {
+      const current = variants[activeVariantIndex] || [];
+      if (current.length === 0) return;
+      pushUndo(current);
+      setVariants((prev) => {
+        const next = [...prev];
+        next[activeVariantIndex] = [];
+        return next;
+      });
     }
+  }, [activeVariantIndex, strokes, variants, pushUndo]);
 
-    onSave(character.char, finalPrimary, finalVariants);
-  }, [strokes, variants, activeVariantIndex, character.char, character.strokes, onSave]);
+  const addVariant = useCallback(() => {
+    setVariants((prev) => {
+      const next = [...prev, []];
+      setActiveVariantIndex(next.length - 1);
+      return next;
+    });
+  }, []);
 
-  const handleSaveAndNext = useCallback(() => {
-    commitCurrentStrokes();
-    if (onNext && hasNext) {
-      onNext();
-    }
-  }, [commitCurrentStrokes, onNext, hasNext]);
+  const switchToVariant = useCallback((idx: number) => {
+    setActiveVariantIndex(idx);
+  }, []);
 
-  const handleSaveAndPrev = useCallback(() => {
-    commitCurrentStrokes();
-    if (onPrevious && hasPrevious) {
-      onPrevious();
-    }
-  }, [commitCurrentStrokes, onPrevious, hasPrevious]);
+  const switchToPrimary = useCallback(() => {
+    setActiveVariantIndex(-1);
+  }, []);
 
-  const handleSaveAndClose = useCallback(() => {
-    commitCurrentStrokes();
-    onClose();
-  }, [commitCurrentStrokes, onClose]);
+  const confirmDeleteVariant = useCallback((idx: number) => {
+    setVariantToDelete(idx);
+  }, []);
 
-  // Keyboard navigation shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
-
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          handleRedo();
-        } else {
-          handleUndo();
-        }
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
-        e.preventDefault();
-        handleRedo();
-      } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
-        e.preventDefault();
-        handleSaveAndNext();
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        handleSaveAndPrev();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        handleSaveAndClose();
-      } else if (e.key === '1') {
-        setTool('pen');
-        setPenStyle('gel');
-      } else if (e.key === '2') {
-        setTool('pen');
-        setPenStyle('fountain');
-      } else if (e.key === '3') {
-        setTool('pen');
-        setPenStyle('marker');
-      } else if (e.key === '4') {
-        setTool('pen');
-        setPenStyle('pencil');
-      } else if (e.key === 'e' || e.key === 'E') {
-        setTool('eraser');
+  const deleteVariant = useCallback(() => {
+    if (variantToDelete === null) return;
+    const idx = variantToDelete;
+    setVariants((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (activeVariantIndex === idx) {
+        setActiveVariantIndex(-1);
+      } else if (activeVariantIndex > idx) {
+        setActiveVariantIndex(activeVariantIndex - 1);
       }
-    };
+      return next;
+    });
+    setVariantToDelete(null);
+  }, [variantToDelete, activeVariantIndex]);
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, handleSaveAndNext, handleSaveAndPrev, handleSaveAndClose]);
+  const getCanvasCoordinates = useCallback((e: React.PointerEvent<HTMLCanvasElement> | PointerEvent): Point | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const cssW = rect.width;
+    const cssH = rect.height;
+    if (cssW === 0 || cssH === 0) return null;
+    const scaleX = VIRTUAL_WIDTH / cssW;
+    const scaleY = VIRTUAL_HEIGHT / cssH;
+    const clientX = 'clientX' in e ? e.clientX : 0;
+    const clientY = 'clientY' in e ? e.clientY : 0;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+      pressure: e.pressure && e.pressure > 0 ? e.pressure : undefined,
+    };
+  }, []);
+
+  const startDrawing = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const pt = getCanvasCoordinates(e);
+      if (!pt) return;
+      drawingInProgressRef.current = true;
+      activePointerTypeRef.current = e.pointerType;
+      if (tool === 'pen') {
+        if (activeVariantIndex === -1) pushUndo(strokes);
+        else pushUndo(variants[activeVariantIndex] || []);
+        setIsDrawing(true);
+        currentStrokeRef.current = [pt];
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } else if (tool === 'eraser') {
+        isEraserDraggingRef.current = false;
+        eraseAtPoint(pt);
+        setEraserMousePos(pt);
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+    },
+    [tool, getCanvasCoordinates, activeVariantIndex, strokes, variants, pushUndo],
+  );
+
+  const draw = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const pt = getCanvasCoordinates(e);
+      if (!pt) return;
+      if (tool === 'pen' && isDrawing) {
+        currentStrokeRef.current.push(pt);
+        const s = [...currentStrokeRef.current];
+        if (activeVariantIndex === -1) {
+          setStrokes((prev) => [...prev.slice(0, -0), ...([])]);
+          setStrokes((prev) => {
+            const next = [...prev];
+            next[next.length - 1] = s;
+            return next;
+          });
+          if (strokes.length === 0 || strokes[strokes.length - 1] !== s) {
+          }
+        } else {
+          setVariants((prev) => {
+            const next = [...prev];
+            if (!next[activeVariantIndex]) next[activeVariantIndex] = [];
+            next[activeVariantIndex][next[activeVariantIndex].length - 1] = s;
+            return next;
+          });
+        }
+      } else if (tool === 'eraser') {
+        if (!isEraserDraggingRef.current) {
+          if (activeVariantIndex === -1) pushUndo(strokes);
+          else pushUndo(variants[activeVariantIndex] || []);
+          isEraserDraggingRef.current = true;
+        }
+        eraseAtPoint(pt);
+        setEraserMousePos(pt);
+      }
+    },
+    [tool, isDrawing, getCanvasCoordinates, activeVariantIndex, strokes, variants],
+  );
+
+  const endDrawing = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (tool === 'pen' && isDrawing && currentStrokeRef.current.length > 0) {
+        const finalStroke = currentStrokeRef.current;
+        if (activeVariantIndex === -1) {
+          setStrokes((prev) => {
+            const next = [...prev];
+            next[next.length - 1] = finalStroke;
+            return next;
+          });
+        } else {
+          setVariants((prev) => {
+            const next = [...prev];
+            if (!next[activeVariantIndex]) next[activeVariantIndex] = [];
+            next[activeVariantIndex][next[activeVariantIndex].length - 1] = finalStroke;
+            return next;
+          });
+        }
+        currentStrokeRef.current = [];
+        setIsDrawing(false);
+      }
+      isEraserDraggingRef.current = false;
+      setEraserMousePos(null);
+      drawingInProgressRef.current = false;
+      activePointerTypeRef.current = null;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+    },
+    [tool, isDrawing, activeVariantIndex],
+  );
+
+  const eraseAtPoint = useCallback(
+    (pt: Point) => {
+      const r = currentEraserRadius;
+      if (activeVariantIndex === -1) {
+        setStrokes((prev) =>
+          prev.filter((s) => !s.some((p) => Math.hypot(p.x - pt.x, p.y - pt.y) < r)),
+        );
+      } else {
+        setVariants((prev) => {
+          const next = [...prev];
+          if (!next[activeVariantIndex]) next[activeVariantIndex] = [];
+          next[activeVariantIndex] = next[activeVariantIndex].filter(
+            (s) => !s.some((p) => Math.hypot(p.x - pt.x, p.y - pt.y) < r),
+          );
+          return next;
+        });
+      }
+    },
+    [currentEraserRadius, activeVariantIndex],
+  );
+
+  const handlePointerLeave = useCallback(() => {
+    setIsHoveringCanvas(false);
+    setEraserMousePos(null);
+  }, []);
+
+  const handlePointerEnter = useCallback(() => {
+    setIsHoveringCanvas(true);
+  }, []);
+
+  const handleSave = useCallback(() => {
+    const cleanVariants = variants.filter((v) => v.length > 0);
+    onSave(character.char, strokes, cleanVariants.length > 0 ? cleanVariants : undefined);
+  }, [onSave, character.char, strokes, variants]);
+
+  const currentStrokes = activeVariantIndex === -1 ? strokes : variants[activeVariantIndex] || [];
+
+  const groupedChars = React.useMemo(() => {
+    const groups: Record<string, { char: string; category: string; hasStrokes: boolean }[]> = {
+      Uppercase: [],
+      Lowercase: [],
+      Numbers: [],
+      Symbols: [],
+    };
+    allCharacterList.forEach((c) => {
+      if (c.category === 'uppercase') groups.Uppercase.push(c);
+      else if (c.category === 'lowercase') groups.Lowercase.push(c);
+      else if (c.category === 'numbers') groups.Numbers.push(c);
+      else groups.Symbols.push(c);
+    });
+    return groups;
+  }, [allCharacterList]);
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm ${
-        isExpanded ? 'p-0' : 'p-2 sm:p-4'
-      } overflow-y-auto`}
+      ref={containerRef}
+      className="fixed inset-0 z-[60] flex h-dvh w-screen flex-col overflow-hidden bg-neutral-50"
+      onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+        }
+        if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z')) {
+          e.preventDefault();
+          redo();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          handleSave();
+        }
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+          e.preventDefault();
+          clearCanvas();
+        }
+        if (e.key === 'ArrowRight' && hasNext && onNext) {
+          e.preventDefault();
+          onNext();
+        }
+        if (e.key === 'ArrowLeft' && hasPrevious && onPrevious) {
+          e.preventDefault();
+          onPrevious();
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+      tabIndex={0}
     >
-      <div
-        className={`bg-white border border-neutral-200 shadow-2xl w-full flex flex-col transition-all ${
-          isExpanded
-            ? 'h-full max-w-none rounded-none'
-            : 'max-w-2xl sm:max-w-3xl rounded-3xl my-auto p-4 sm:p-5 max-h-[95vh] overflow-y-auto'
-        }`}
-      >
-        {/* ========================================================================= */}
-        {/* 1. TOP HEADER & CHARACTER SELECTOR CAROUSEL                                */}
-        {/* ========================================================================= */}
-        <div className="flex items-center justify-between pb-2.5 border-b border-neutral-100 gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-neutral-100 border border-neutral-200/80 flex items-center justify-center text-xl font-bold font-serif text-neutral-900 shadow-2xs">
-              {character.char}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-neutral-900 font-serif">
-                  Write '{character.char}'
-                </h3>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-mono bg-neutral-100 px-1.5 py-0.5 rounded">
-                  U+{character.unicode.toString(16).toUpperCase().padStart(4, '0')}
-                </span>
-                <span className="hidden sm:inline text-xs text-neutral-400 capitalize">
-                  · {character.category}
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-500 hidden sm:block">
-                Stylus & touch enabled. Write between cap line and baseline.
+      <div className="flex h-full min-h-0 w-full flex-col lg:flex-row">
+        <aside className="flex h-auto w-full flex-col overflow-hidden border-b border-neutral-200 bg-white lg:h-full lg:w-[320px] lg:min-w-[320px] lg:max-w-[360px] lg:border-b-0 lg:border-r">
+          <div className="flex items-start justify-between gap-3 border-b border-neutral-100 px-4 py-4 sm:px-5">
+            <div className="min-w-0 space-y-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-neutral-500 transition-colors hover:text-neutral-900"
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>Close editor</span>
+              </button>
+              <h2 className="truncate font-serif text-lg font-semibold text-neutral-900 sm:text-xl">
+                Drawing &ldquo;{character.char}&rdquo;
+              </h2>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">
+                {character.category.replace('case', '-case')}
               </p>
             </div>
-          </div>
-
-          {/* Quick controls: Expand, Shortcuts info, Close */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setShowShortcuts(!showShortcuts)}
-              className="p-1.5 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
-              title="Keyboard shortcuts"
-            >
-              <Keyboard className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1.5 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
-              title={isExpanded ? 'Restore window size' : 'Expand full screen'}
-            >
-              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-            <button
-              onClick={handleSaveAndClose}
-              className="p-1.5 text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
-              title="Save & Close"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        {/* Shortcuts popup banner */}
-        {showShortcuts && (
-          <div className="p-2.5 my-2 bg-neutral-50 border border-neutral-200 rounded-2xl text-[11px] text-neutral-600 flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono">
-            <span><strong className="text-neutral-900">Enter / →</strong> : Save & Next</span>
-            <span><strong className="text-neutral-900">←</strong> : Previous</span>
-            <span><strong className="text-neutral-900">Ctrl+Z</strong> : Undo</span>
-            <span><strong className="text-neutral-900">Ctrl+Y</strong> : Redo</span>
-            <span><strong className="text-neutral-900">1/2/3/4</strong> : Pens</span>
-            <span><strong className="text-neutral-900">E</strong> : Eraser</span>
-            <span><strong className="text-neutral-900">Esc</strong> : Close</span>
-          </div>
-        )}
-
-        {/* Character Carousel Tray */}
-        {allCharacterList.length > 0 && onSelectCharacter && (
-          <div className="py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b border-neutral-100">
-            {allCharacterList.map((item) => {
-              const isCurrent = item.char === character.char;
-              return (
-                <button
-                  key={item.char}
-                  onClick={() => {
-                    commitCurrentStrokes();
-                    onSelectCharacter(item.char);
-                  }}
-                  className={`min-w-[30px] h-7 px-1.5 rounded-lg flex items-center justify-center text-xs font-mono transition-all relative cursor-pointer ${
-                    isCurrent
-                      ? 'bg-neutral-900 text-white font-bold shadow-2xs scale-105'
-                      : item.hasStrokes
-                      ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                  }`}
-                  title={`Character ${item.char}`}
-                >
-                  <span>{item.char}</span>
-                  {item.hasStrokes && !isCurrent && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 absolute -top-0.5 -right-0.5" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 2. SUB-BAR: STYLE VARIANTS (WITH DELETE OPTION) & GUIDELINE TOGGLES        */}
-        {/* ========================================================================= */}
-        <div className="py-2 flex flex-wrap items-center justify-between gap-2.5 border-b border-neutral-100 text-xs text-neutral-600">
-          {/* Alternates selector with delete option */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-medium text-neutral-700 mr-1 text-[11px] font-mono">Variant:</span>
-            <button
-              onClick={() => handleSelectVariant(-1)}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer text-xs ${
-                activeVariantIndex === -1
-                  ? 'bg-neutral-900 text-white shadow-2xs'
-                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-              }`}
-            >
-              Primary {character.char}
-            </button>
-
-            {variants.map((v, idx) => (
-              <div
-                key={idx}
-                className={`inline-flex items-center rounded-lg border overflow-hidden ${
-                  activeVariantIndex === idx
-                    ? 'bg-neutral-900 text-white border-neutral-900'
-                    : 'bg-neutral-100 text-neutral-600 border-neutral-200 hover:bg-neutral-200/80'
-                }`}
-              >
-                <button
-                  onClick={() => handleSelectVariant(idx)}
-                  className="px-2 py-1 font-medium transition-colors cursor-pointer text-xs flex items-center gap-1"
-                >
-                  <span>Alt {character.char}{idx + 1}</span>
-                  {v && v.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-                </button>
-                {/* Delete button on variant */}
-                <button
-                  onClick={(e) => handleDeleteVariantTrigger(e, idx)}
-                  className={`px-1.5 py-1 transition-colors cursor-pointer text-xs ${
-                    activeVariantIndex === idx
-                      ? 'hover:bg-neutral-800 text-neutral-300 hover:text-white'
-                      : 'hover:bg-neutral-300 text-neutral-400 hover:text-red-600'
-                  }`}
-                  title="Delete this variant"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
-
-            {variants.length < 3 && (
+            <div className="flex shrink-0 items-center gap-1">
               <button
-                onClick={handleAddVariant}
-                className="px-2 py-1 rounded-lg text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 border border-dashed border-neutral-300 flex items-center gap-1 transition-colors cursor-pointer text-xs"
-                title="Add handwriting alternate variant"
+                type="button"
+                onClick={() => setShowShortcuts((s) => !s)}
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900"
+                title="Keyboard shortcuts"
               >
-                <Plus className="w-3 h-3" />
-                <span>+ Alt</span>
-              </button>
-            )}
-          </div>
-
-          {/* Guideline style selection */}
-          <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-1 bg-neutral-100 p-0.5 rounded-lg text-[11px]">
-              {(['typography', 'notebook', 'dots', 'blank'] as GuidelineStyle[]).map((style) => (
-                <button
-                  key={style}
-                  onClick={() => {
-                    setGuidelineStyle(style);
-                    setShowGuidelines(style !== 'blank');
-                  }}
-                  className={`px-2 py-0.5 rounded-md capitalize transition-colors cursor-pointer ${
-                    guidelineStyle === style
-                      ? 'bg-white font-semibold text-neutral-900 shadow-2xs'
-                      : 'text-neutral-500 hover:text-neutral-800'
-                  }`}
-                >
-                  {style}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowGuidelines(!showGuidelines)}
-              className="p-1 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors cursor-pointer"
-              title="Toggle guidelines"
-            >
-              {showGuidelines ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Variant Delete Confirmation Modal */}
-        {variantToDelete !== null && (
-          <div className="p-3 my-2 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 text-xs text-rose-900">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>
-                Delete Alternate Variant <strong>Alt {character.char}{variantToDelete + 1}</strong>? Your handwritten strokes in this variant will be removed.
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => setVariantToDelete(null)}
-                className="px-2.5 py-1 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-100 rounded-lg font-medium cursor-pointer"
-              >
-                Cancel
+                <Keyboard className="h-3.5 w-3.5" />
               </button>
               <button
-                onClick={() => performDeleteVariant(variantToDelete)}
-                className="px-2.5 py-1 bg-rose-700 hover:bg-rose-800 text-white rounded-lg font-medium cursor-pointer"
+                type="button"
+                onClick={() => setIsExpanded((s) => !s)}
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900"
+                title={isExpanded ? 'Shrink canvas' : 'Expand canvas'}
               >
-                Delete Variant
+                {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900"
+                title="Close"
+              >
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
-        )}
 
-        {/* ========================================================================= */}
-        {/* 3. MAIN CANVAS DRAWING AREA (High precision, touch-action: none)           */}
-        {/* ========================================================================= */}
-        <div className="relative my-2.5 flex flex-col items-center flex-1 justify-center">
-          <div className="relative w-full max-w-[380px] sm:max-w-[420px] aspect-square rounded-2xl border border-neutral-200 bg-white shadow-inner overflow-hidden select-none touch-none">
-            {/* Guide line labels */}
-            {showGuidelines && guidelineStyle === 'typography' && (
-              <div className="absolute right-2 top-0 bottom-0 flex flex-col justify-between pointer-events-none py-1 text-[9px] text-neutral-400 font-mono">
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: `${(GUIDELINES.ascender / 400) * 100}%`,
-                    transform: 'translateY(-100%)',
-                  }}
-                >
-                  ascender
-                </span>
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: `${(GUIDELINES.capHeight / 400) * 100}%`,
-                    transform: 'translateY(-100%)',
-                  }}
-                >
-                  cap
-                </span>
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: `${(GUIDELINES.midline / 400) * 100}%`,
-                    transform: 'translateY(-100%)',
-                  }}
-                >
-                  x-height
-                </span>
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: `${(GUIDELINES.baseline / 400) * 100}%`,
-                    transform: 'translateY(-100%)',
-                  }}
-                >
-                  baseline
-                </span>
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: `${(GUIDELINES.descender / 400) * 100}%`,
-                    transform: 'translateY(-100%)',
-                  }}
-                >
-                  descender
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-4 py-4 sm:px-5 sm:py-5">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-700">Progress</span>
+                <span className="font-mono text-[11px] text-neutral-500">
+                  {strokes.length} strokes • {((quality as any).score ?? (quality as any).quality ?? 0)}/100
                 </span>
               </div>
-            )}
-
-            <canvas
-              ref={canvasRef}
-              className={`w-full h-full touch-none ${
-                tool === 'eraser'
-                  ? isHoveringCanvas
-                    ? 'cursor-none'
-                    : 'cursor-default'
-                  : 'cursor-crosshair'
-              }`}
-              onPointerDown={handlePointerDown}
-              onPointerMove={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setEraserMousePos({
-                  x: e.clientX - rect.left,
-                  y: e.clientY - rect.top,
-                });
-                handlePointerMove(e);
-              }}
-              onPointerEnter={() => setIsHoveringCanvas(true)}
-              onPointerLeave={() => {
-                setIsHoveringCanvas(false);
-                setEraserMousePos(null);
-              }}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-            />
-
-            {/* Eraser cursor circle overlay */}
-            {tool === 'eraser' && isHoveringCanvas && eraserMousePos && (
-              <div
-                className="absolute pointer-events-none rounded-full border-2 border-neutral-900 bg-neutral-900/15 shadow-sm transition-all duration-75"
-                style={{
-                  left: eraserMousePos.x,
-                  top: eraserMousePos.y,
-                  width: `${Math.max(16, (currentEraserRadius / 200) * 100)}%`,
-                  height: `${Math.max(16, (currentEraserRadius / 200) * 100)}%`,
-                  transform: 'translate(-50%, -50%)',
-                }}
-              />
-            )}
-          </div>
-
-          {/* Stroke count & baseline guide helper */}
-          <div className="flex items-center justify-between w-full max-w-[420px] mt-1 text-[11px] text-neutral-400 font-mono">
-            <span>Strokes: {strokes.length}</span>
-            <span>Character: {character.char}</span>
-            <span>
-              {quality.status === 'good' ? (
-                <span className="text-emerald-600 font-sans font-medium">✓ Optimal balance</span>
-              ) : quality.status === 'warning' ? (
-                <span className="text-amber-600 font-sans font-medium">Notice</span>
-              ) : (
-                <span className="text-neutral-400 font-sans">Ready</span>
+              <div className="h-1.5 w-full overflow-hidden rounded-full border border-neutral-200 bg-neutral-100">
+                <div
+                  className={`h-full transition-all duration-300 ${((quality as any).score ?? (quality as any).quality ?? 0) >= 90 ? 'bg-emerald-600' : ((quality as any).score ?? (quality as any).quality ?? 0) >= 70 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                  style={{ width: `${((quality as any).score ?? (quality as any).quality ?? 0)}%` }}
+                />
+              </div>
+              {quality.feedback.length > 0 && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <p className="leading-relaxed">{quality.feedback[0]}</p>
+                </div>
               )}
-            </span>
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* 4. TOOLBAR CONTROLS: PENS, ERASER WITH SCALING & DRAG ERASING             */}
-        {/* ========================================================================= */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 py-2 border-t border-b border-neutral-100 bg-neutral-50/70 px-3 rounded-2xl mb-2.5">
-          {/* Tool Selector */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <div className="flex items-center gap-1 bg-white p-0.5 rounded-xl border border-neutral-200">
-              <button
-                onClick={() => {
-                  setTool('pen');
-                  setPenStyle('gel');
-                }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  tool === 'pen' && penStyle === 'gel'
-                    ? 'bg-neutral-900 text-white shadow-2xs font-semibold'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-                title="Gel Pen: Clean uniform stroke"
-              >
-                <PenTool className="w-3.5 h-3.5" />
-                <span>Gel Pen</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setTool('pen');
-                  setPenStyle('fountain');
-                }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  tool === 'pen' && penStyle === 'fountain'
-                    ? 'bg-neutral-900 text-white shadow-2xs font-semibold'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-                title="Fountain Pen: Dynamic angle stroke"
-              >
-                <span>✒️ Fountain</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setTool('pen');
-                  setPenStyle('marker');
-                }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  tool === 'pen' && penStyle === 'marker'
-                    ? 'bg-neutral-900 text-white shadow-2xs font-semibold'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-                title="Marker: Bold rounded line"
-              >
-                <span>🖌️ Marker</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setTool('pen');
-                  setPenStyle('pencil');
-                }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  tool === 'pen' && penStyle === 'pencil'
-                    ? 'bg-neutral-900 text-white shadow-2xs font-semibold'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-                title="Pencil: Soft graphite texture"
-              >
-                <span>✏️ Pencil</span>
-              </button>
             </div>
 
-            {/* Eraser button with drag capability */}
-            <button
-              onClick={() => setTool('eraser')}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
-                tool === 'eraser'
-                  ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
-                  : 'bg-white text-neutral-600 hover:text-neutral-900 border-neutral-200'
-              }`}
-              title="Drag Eraser: Drag to erase localized stroke points"
-            >
-              <Eraser className="w-3.5 h-3.5" />
-              <span>Drag Eraser</span>
-            </button>
-
-            {/* Stroke Width Selector when Pen is active */}
-            {tool === 'pen' && (
-              <div className="flex items-center gap-1 pl-1 text-xs text-neutral-500">
-                <span className="text-[11px] font-mono">Weight:</span>
-                {[
-                  { label: 'Fine', value: 3.5 },
-                  { label: 'Regular', value: 5.5 },
-                  { label: 'Bold', value: 8 },
-                ].map((w) => (
+            <div className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-700">Character navigation</span>
+              <div className="grid max-h-48 grid-cols-8 gap-1 overflow-auto rounded-lg border border-neutral-200 bg-neutral-50/60 p-2 sm:grid-cols-10 lg:grid-cols-8">
+                {allCharacterList.map((c) => (
                   <button
-                    key={w.value}
-                    onClick={() => setStrokeWidth(w.value)}
-                    className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
-                      strokeWidth === w.value
-                        ? 'bg-neutral-900 text-white font-semibold'
-                        : 'text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200'
+                    key={c.char}
+                    type="button"
+                    onClick={() => onSelectCharacter?.(c.char)}
+                    className={`flex aspect-square items-center justify-center rounded-md border text-sm font-medium transition-colors ${
+                      c.char === character.char
+                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        : c.hasStrokes
+                        ? 'border-neutral-200 bg-white text-neutral-900 hover:border-neutral-900'
+                        : 'border-dashed border-neutral-300 bg-white/70 text-neutral-500 hover:border-neutral-500'
                     }`}
                   >
-                    {w.label}
+                    {c.char}
                   </button>
                 ))}
               </div>
-            )}
+              {Object.values(groupedChars).some((g) => g.length > 0) && (
+                <div className="flex flex-wrap gap-1 text-[10px] text-neutral-500">
+                  {Object.entries(groupedChars).map(([k, g]) => (
+                    <span key={k} className="rounded-full bg-neutral-100 px-2 py-0.5">
+                      {k}: {g.filter((x) => x.hasStrokes).length}/{g.length}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            {/* Eraser Scale Selector (Small / Medium / Large) when Eraser is active */}
-            {tool === 'eraser' && (
-              <div className="flex items-center gap-1 pl-1 text-xs text-neutral-500">
-                <span className="text-[11px] font-mono font-semibold text-neutral-900">Eraser Size:</span>
-                {(['small', 'medium', 'large'] as EraserScale[]).map((scale) => (
-                  <button
-                    key={scale}
-                    onClick={() => setEraserScale(scale)}
-                    className={`px-2 py-0.5 rounded-md text-[11px] font-medium capitalize transition-colors cursor-pointer ${
-                      eraserScale === scale
-                        ? 'bg-neutral-900 text-white font-semibold'
-                        : 'text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200'
-                    }`}
-                  >
-                    {scale}
-                  </button>
-                ))}
+            <div className="space-y-3">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-700">Tools</span>
+              <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setTool('pen')}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                    tool === 'pen' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  <PenTool className="h-3.5 w-3.5" />
+                  Pen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTool('eraser')}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                    tool === 'eraser' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  <Eraser className="h-3.5 w-3.5" />
+                  Eraser
+                </button>
               </div>
-            )}
-          </div>
 
-          {/* Undo / Redo / Trash */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleUndo}
-              disabled={undoStack.length === 0}
-              className="p-1.5 text-neutral-600 hover:text-neutral-900 disabled:opacity-30 rounded-lg hover:bg-neutral-200/60 transition-colors cursor-pointer"
-              title="Undo (Ctrl+Z)"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleRedo}
-              disabled={redoStack.length === 0}
-              className="p-1.5 text-neutral-600 hover:text-neutral-900 disabled:opacity-30 rounded-lg hover:bg-neutral-200/60 transition-colors cursor-pointer"
-              title="Redo (Ctrl+Y)"
-            >
-              <RotateCw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleClear}
-              disabled={strokes.length === 0}
-              className="p-1.5 text-neutral-600 hover:text-rose-600 disabled:opacity-30 rounded-lg hover:bg-rose-50 transition-colors ml-1 cursor-pointer"
-              title="Clear canvas strokes"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+              {tool === 'pen' && (
+                <div className="space-y-3 rounded-lg border border-neutral-200 bg-white/90 p-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-neutral-600">Stroke width</span>
+                      <span className="font-mono text-[11px] text-neutral-500">{strokeWidth}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={16}
+                      step={0.5}
+                      value={strokeWidth}
+                      onChange={(e) => setStrokeWidth(Number(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['gel', 'fountain', 'marker', 'pencil'] as PenStyle[]).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setPenStyle(s)}
+                        className={`rounded-md border px-2 py-1.5 text-[11px] capitalize transition-colors ${
+                          penStyle === s ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 hover:border-neutral-400'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-        {/* Quality Notice Banner */}
-        {strokes.length > 0 && quality.status !== 'good' && (
-          <div
-            className={`p-2 rounded-xl mb-2.5 text-xs flex items-center gap-2 transition-colors ${
-              quality.status === 'warning'
-                ? 'bg-amber-50 border border-amber-200 text-amber-800'
-                : 'bg-rose-50 border border-rose-200 text-rose-800'
-            }`}
-          >
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <div className="flex-1 flex items-center justify-between">
-              <span>{quality.feedback}</span>
-              <span className="text-[10px] uppercase font-mono opacity-80 font-bold ml-2">
-                Tip
+              {tool === 'eraser' && (
+                <div className="space-y-2 rounded-lg border border-neutral-200 bg-white/90 p-3">
+                  <span className="text-[11px] text-neutral-600">Eraser size</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['small', 'medium', 'large'] as EraserScale[]).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setEraserScale(s)}
+                        className={`rounded-md border px-2 py-1.5 text-[11px] capitalize transition-colors ${
+                          eraserScale === s ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 hover:border-neutral-400'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2 rounded-lg border border-neutral-200 bg-white/90 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-neutral-600">Guidelines</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowGuidelines((v) => !v)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 px-2 py-0.5 text-[11px] transition-colors hover:border-neutral-400"
+                  >
+                    {showGuidelines ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                    {showGuidelines ? 'Visible' : 'Hidden'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['typography', 'notebook', 'dots', 'blank'] as GuidelineStyle[]).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setGuidelineStyle(s)}
+                      disabled={!showGuidelines}
+                      className={`rounded-md border px-2 py-1.5 text-[11px] capitalize transition-colors ${
+                        guidelineStyle === s && showGuidelines
+                          ? 'border-neutral-900 bg-neutral-900 text-white'
+                          : 'border-neutral-200 hover:border-neutral-400 disabled:opacity-40'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-700">Alternates</span>
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={switchToPrimary}
+                  className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                    activeVariantIndex === -1 ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 hover:border-neutral-400'
+                  }`}
+                >
+                  Primary
+                </button>
+                {variants.map((_, i) => (
+                  <div key={i} className="flex items-center gap-0.5 rounded-md border border-neutral-200">
+                    <button
+                      type="button"
+                      onClick={() => switchToVariant(i)}
+                      className={`px-2 py-1 text-[11px] transition-colors ${
+                        activeVariantIndex === i ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
+                      }`}
+                    >
+                      Alt {i + 1}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => confirmDeleteVariant(i)}
+                      className="px-1.5 py-1 text-neutral-500 transition-colors hover:text-rose-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addVariant}
+                  className="inline-flex items-center gap-1 rounded-md border border-dashed border-neutral-300 px-2 py-1 text-[11px] text-neutral-600 transition-colors hover:border-neutral-500"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add alternate
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-auto space-y-2">
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={undo}
+                  disabled={undoStack.length === 0}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={redo}
+                  disabled={redoStack.length === 0}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  Redo
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={clearCanvas}
+                disabled={currentStrokes.length === 0}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium text-rose-700 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear
+              </button>
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  type="button"
+                  onClick={onPrevious}
+                  disabled={!hasPrevious}
+                  className="inline-flex items-center justify-center gap-1 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="inline-flex items-center justify-center gap-1 rounded-md bg-neutral-900 px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-neutral-800"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={onNext}
+                  disabled={!hasNext}
+                  className="inline-flex items-center justify-center gap-1 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-neutral-50">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-4">
+            <div className="flex items-center gap-2 text-[11px] text-neutral-600">
+              <span className="font-medium text-neutral-900">{character.char}</span>
+              <span>•</span>
+              <span>{strokes.length} strokes</span>
+              <span>•</span>
+              <span className={((quality as any).score ?? (quality as any).quality ?? 0) >= 90 ? 'text-emerald-700' : ((quality as any).score ?? (quality as any).quality ?? 0) >= 70 ? 'text-amber-700' : 'text-rose-700'}>
+                Quality {((quality as any).score ?? (quality as any).quality ?? 0)}/100
               </span>
+              {activeVariantIndex >= 0 && (
+                <>
+                  <span>•</span>
+                  <span className="text-neutral-900">Alt {activeVariantIndex + 1}</span>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setShowGuidelines((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-[11px] transition-colors hover:border-neutral-400"
+              >
+                {showGuidelines ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                Guidelines
+              </button>
+              <button
+                type="button"
+                onClick={clearCanvas}
+                disabled={currentStrokes.length === 0}
+                className="inline-flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-[11px] transition-colors hover:border-neutral-400 disabled:opacity-40"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear
+              </button>
             </div>
           </div>
-        )}
 
-        {/* ========================================================================= */}
-        {/* 5. ACTION CONTROLS: PREVIOUS, SAVE & NEXT, AND FINISH                     */}
-        {/* ========================================================================= */}
-        <div className="flex items-center justify-between pt-1 gap-2.5 flex-wrap">
-          <div className="flex items-center gap-2">
-            {hasPrevious && onPrevious && (
-              <button
-                onClick={handleSaveAndPrev}
-                className="px-3 py-2 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                title="Save and jump to previous letter (Left Arrow)"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span>Prev Letter</span>
-              </button>
-            )}
-            <button
-              onClick={handleSaveAndClose}
-              className="px-3 py-2 text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer"
+          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-2 sm:p-4">
+            <div
+              className={`relative flex aspect-square max-h-full w-auto max-w-full items-center justify-center overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm ${
+                isExpanded ? 'h-[min(92dvh,92vw)] w-[min(92dvh,92vw)]' : 'h-[min(78dvh,78vw)] w-[min(78dvh,78vw)] sm:h-[min(82dvh,82vw)] sm:w-[min(82dvh,82vw)] lg:h-[min(88dvh,88vw)] lg:w-[min(88dvh,88vw)]'
+              }`}
             >
-              Cancel
-            </button>
+              <canvas
+                ref={canvasRef}
+                width={VIRTUAL_WIDTH}
+                height={VIRTUAL_HEIGHT}
+                className="h-full w-full touch-none select-none"
+                style={{ touchAction: 'none' }}
+                onPointerDown={startDrawing}
+                onPointerMove={draw}
+                onPointerUp={endDrawing}
+                onPointerCancel={endDrawing}
+                onPointerLeave={handlePointerLeave}
+                onPointerEnter={handlePointerEnter}
+              />
+            </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSaveAndClose}
-              disabled={strokes.length === 0}
-              className="px-4 py-2 text-xs font-semibold text-neutral-800 bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 rounded-xl transition-colors cursor-pointer"
-            >
-              Save & Close
-            </button>
-
-            {hasNext && onNext && (
-              <button
-                onClick={handleSaveAndNext}
-                disabled={strokes.length === 0}
-                className="px-5 py-2 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-40 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer group"
-                title="Save and advance immediately to next character (Enter or Right Arrow)"
-              >
-                <span>Save & Next Letter</span>
-                <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-              </button>
-            )}
-          </div>
-        </div>
+        </main>
       </div>
     </div>
   );
