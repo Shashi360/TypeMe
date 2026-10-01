@@ -245,10 +245,16 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           const variantCount = charData.variants ? charData.variants.length : 0;
 
           return (
-            <div
+            <button
+              type="button"
               key={def.char}
               onClick={() => setEditingChar(charData)}
-              className={`relative aspect-square rounded-xl border bg-white p-3 flex flex-col justify-between cursor-pointer transition-all hover:scale-[1.02] shadow-2xs group ${
+              aria-label={
+                hasStrokes
+                  ? `Edit ${def.char}, ${charData.strokes.length} strokes`
+                  : `Write ${def.char}`
+              }
+              className={`relative aspect-square rounded-xl border bg-white p-3 flex flex-col justify-between text-left cursor-pointer transition-all hover:scale-[1.02] shadow-2xs group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 ${
                 hasStrokes
                   ? 'border-neutral-200 hover:border-neutral-900'
                   : 'border-dashed border-neutral-300 hover:border-neutral-500 bg-neutral-50/40'
@@ -332,7 +338,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   </span>
                 )}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -351,6 +357,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           hasNext={true}
           allCharacterList={characterListSummary}
           onSelectCharacter={handleSelectChar}
+          projectName={project.name}
+          completedCount={completedChars}
+          totalCount={totalChars}
         />
       )}
     </div>
