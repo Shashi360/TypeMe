@@ -697,7 +697,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   return (
     <div
       ref={stageRef}
-      className="fixed inset-0 z-50 flex h-screen min-h-0 w-screen flex-col bg-[#FAFAF7] overflow-hidden"
+      className="fixed inset-0 z-50 flex h-dvh w-screen flex-col bg-[#FAFAF7] overflow-hidden"
       data-testid="handwriting-canvas"
     >
       {/* Decorative blurred accents - subtle */}
@@ -706,7 +706,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       <div aria-hidden="true" className="pointer-events-none absolute bottom-20 left-1/3 h-32 w-32 rounded-full bg-amber-100/30 blur-3xl" />
 
       {/* Top Application Bar */}
-      <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-[#E8E8E3] bg-white/95 px-4 shadow-sm backdrop-blur sm:h-16 md:h-[68px] lg:h-[72px]">
+      <header className="z-10 flex h-14 shrink-0 items-center justify-between border-b border-[#E8E8E3] bg-white/95 px-2 shadow-sm backdrop-blur sm:h-16 sm:px-4 md:h-[68px] lg:h-[72px]">
         {/* Left */}
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex items-center gap-2">
@@ -772,9 +772,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       {/* Main workspace */}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-2 sm:gap-4 sm:p-3 lg:p-4">
         {/* Top row: sidebar + canvas + tools */}
-        <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-3 lg:flex-row lg:items-stretch lg:justify-center lg:px-2">
+        <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden sm:gap-3 md:grid-cols-[minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_220px] xl:grid-cols-[260px_minmax(0,1fr)_240px] lg:px-2">
           {/* Left Sidebar */}
-          <aside className="hidden w-full shrink-0 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm md:flex lg:h-full lg:w-[240px] xl:w-[260px]">
+          <aside className="hidden h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm lg:flex">
             {/* Categories */}
             <div className="flex flex-col gap-2 p-3">
               {(
@@ -835,8 +835,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </aside>
 
           {/* Center Canvas */}
-          <main className="flex min-h-0 flex-1 flex-col items-center justify-center">
-            <div className="flex w-full max-w-full flex-1 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[1100px] xl:max-w-[1180px] 2xl:max-w-[1280px]">
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center">
+            <div className="flex w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,980px)] xl:max-w-[min(100%,1080px)] 2xl:max-w-[min(100%,1160px)]">
               {/* Canvas header */}
               <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
                 <div className="flex items-center gap-3">
@@ -882,7 +882,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 {/* Canvas stage */}
                 <div
                   ref={containerRef}
-                  className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-2 sm:p-4"
+                  className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
                 >
                   {isEraser && eraserPos ? (
                     <div
@@ -916,7 +916,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </main>
 
           {/* Right Tool Panel */}
-          <aside className="flex w-full shrink-0 flex-col gap-2 sm:gap-3 lg:h-full lg:w-[220px] xl:w-[240px]">
+          <aside className="hidden h-full w-full min-h-0 flex-col gap-2 overflow-hidden sm:gap-3 lg:flex lg:flex-col">
             <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm">
               {/* Pen/Eraser */}
               <div className="flex flex-col gap-2 p-3">
