@@ -789,8 +789,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   key={cat.key}
                   type="button"
                   onClick={() => {
-                    // Switch to first char in this category
-                    const group = cat.key === "upper" ? alpha : cat.key === "lower" ? alphaLower : cat.key === "nums" ? digits : symbolsList.slice(0,24);
+                    const group = cat.key === "upper" ? alpha : cat.key === "lower" ? alphaLower : cat.key === "nums" ? digits : symbolsList;
                     if (group[0]) {
                       saveAndGo(() => {
                         if (onSelectCharacter) onSelectCharacter(group[0]);
@@ -877,7 +876,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     onPointerCancel={handlePointerCancel}
                     onPointerLeave={handlePointerCancel}
                     className="touch-none cursor-crosshair"
-                    style={{ touchAction: "none", width: "100%", height: "100%" }}
+                    style={{ touchAction: "none", width: "100%", height: "100%", objectFit: "contain" }}
                   />
                   {/* Bottom canvas message */}
                   <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
@@ -1014,7 +1013,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   >
                     Main
                   </button>
-                  {variants.map((_, i) => (
+                  {variants.slice(0, 4).map((_, i) => (
                     <div key={i} className="relative">
                       <button
                         type="button"
@@ -1034,13 +1033,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       </button>
                     </div>
                   ))}
-                  <button
-                    type="button"
-                    onClick={addVariant}
-                    className="inline-flex h-7 items-center justify-center rounded-lg border border-dashed border-[#E8E8E3] bg-white px-2 text-xs font-medium text-neutral-600 hover:border-neutral-300"
-                  >
-                    + Add
-                  </button>
+                  {variants.length < 4 ? (
+                    <button
+                      type="button"
+                      onClick={addVariant}
+                      className="inline-flex h-7 items-center justify-center rounded-lg border border-dashed border-[#E8E8E3] bg-white px-2 text-xs font-medium text-neutral-600 hover:border-neutral-300"
+                    >
+                      + Add
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -1086,7 +1087,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               onClick={runQualityCheck}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300"
             >
-              <Sparkles className="h-3.5 w-3.5" /> Quality
+              Quality
             </button>
             <button
               type="button"
