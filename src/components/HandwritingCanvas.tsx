@@ -856,7 +856,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
           {/* Center Canvas */}
           <main className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center">
-            <div className="flex w-full min-w-0 max-w-full flex-1 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,980px)] xl:max-w-[min(100%,1080px)] 2xl:max-w-[min(100%,1160px)]">
+            <div className="flex w-full min-w-0 max-w-full flex-1 flex-col items-center rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,920px)] xl:max-w-[min(100%,980px)] 2xl:max-w-[min(100%,1040px)]">
               {/* Canvas header */}
               <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
                 <div className="flex items-center gap-3">
@@ -889,7 +889,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 <div
                   ref={containerRef}
                   className="relative flex min-h-0 w-full flex-1 items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
-                  style={{ overflow: "hidden" }}
+                  style={{ overflow: "hidden", aspectRatio: "1 / 1" }}
                 >
                   {isEraser && eraserPos ? (
                     <div
