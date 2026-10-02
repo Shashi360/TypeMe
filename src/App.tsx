@@ -173,7 +173,13 @@ export default function App() {
     }
   };
 
-  const handleUpdateCharacter = (char: string, strokes: Stroke[], variants?: Stroke[][]) => {
+  const handleUpdateCharacter = (
+    char: string,
+    strokes: Stroke[],
+    variants?: Stroke[][],
+    strokeStyles?: { brush: string; size: string }[],
+    variantStyles?: { brush: string; size: string }[][],
+  ) => {
     setProjects((prev) =>
       prev.map((proj) => {
         if (proj.id !== activeProjectId) return proj;
@@ -191,6 +197,8 @@ export default function App() {
           ...oldData,
           strokes,
           variants: variants || oldData.variants,
+          strokeStyles: strokeStyles || oldData.strokeStyles,
+          variantStyles: variantStyles || oldData.variantStyles,
           qualityStatus: strokes.length > 0 ? 'good' : 'empty',
           lastUpdated: Date.now(),
         };

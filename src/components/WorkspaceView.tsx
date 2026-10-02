@@ -27,7 +27,13 @@ import {
 
 interface WorkspaceViewProps {
   project: FontProject;
-  onUpdateCharacter: (char: string, strokes: Stroke[], variants?: Stroke[][]) => void;
+  onUpdateCharacter: (
+    char: string,
+    strokes: Stroke[],
+    variants?: Stroke[][],
+    strokeStyles?: { brush: string; size: string }[],
+    variantStyles?: { brush: string; size: string }[][],
+  ) => void;
   onBackToDashboard: () => void;
   onOpenReview: () => void;
   onOpenPreview: () => void;
@@ -348,7 +354,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         <HandwritingCanvas
           character={editingChar}
           onSave={async (data: CharacterData) => {
-            onUpdateCharacter(data.char, data.strokes, data.variants);
+            onUpdateCharacter(data.char, data.strokes, data.variants, data.strokeStyles, data.variantStyles);
           }}
           onClose={() => setEditingChar(null)}
           onNext={handleNextChar}

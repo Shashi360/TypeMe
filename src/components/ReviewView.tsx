@@ -13,7 +13,13 @@ import {
 
 interface ReviewViewProps {
   project: FontProject;
-  onUpdateCharacter: (char: string, strokes: Stroke[], variants?: Stroke[][]) => void;
+  onUpdateCharacter: (
+    char: string,
+    strokes: Stroke[],
+    variants?: Stroke[][],
+    strokeStyles?: { brush: string; size: string }[],
+    variantStyles?: { brush: string; size: string }[][],
+  ) => void;
   onBackToWorkspace: () => void;
   onContinueToPreview: () => void;
 }
@@ -259,7 +265,7 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
         <HandwritingCanvas
           character={editingChar}
           onSave={async (data: any) => {
-            onUpdateCharacter(data.char, data.strokes, data.variants);
+            onUpdateCharacter(data.char, data.strokes, data.variants, data.strokeStyles, data.variantStyles);
           }}
           onClose={() => setEditingChar(null)}
           onNext={handleNextChar}

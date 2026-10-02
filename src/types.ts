@@ -16,6 +16,8 @@ export interface CharacterData {
   category: CharacterCategory;
   strokes: Stroke[];
   variants?: Stroke[][]; // Alternate handwriting versions (e.g. a1, a2, a3)
+  strokeStyles?: { brush: string; size: string }[]; // Parallel to strokes: tool used per stroke
+  variantStyles?: { brush: string; size: string }[][]; // Parallel to variants
   qualityStatus: QualityStatus;
   qualityFeedback?: string;
   lastUpdated?: number;

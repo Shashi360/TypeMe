@@ -69,6 +69,33 @@ const SizeConfig = {
   bold: 2.6,
 } as const;
 
+interface StrokeStyle {
+  brush: BrushType;
+  size: StrokeSize;
+}
+
+interface HistoryEntry {
+  v: number;
+  s: Stroke[];
+  vs: Stroke[][];
+  ss: StrokeStyle[];
+  vss: StrokeStyle[][];
+}
+
+const cloneStrokes = (s: Stroke[]): Stroke[] => s.map((pts) => pts.map((p) => ({ ...p })));
+const cloneVariants = (vs: Stroke[][]): Stroke[][] => vs.map((v) => cloneStrokes(v));
+const cloneStyles = (ss: StrokeStyle[]): StrokeStyle[] => ss.map((s) => ({ ...s }));
+const cloneVariantStyles = (vss: StrokeStyle[][]): StrokeStyle[][] => vss.map((v) => cloneStyles(v));
+
+const styleFrom = (s: unknown, fallbackBrush: BrushType, fallbackSize: StrokeSize): StrokeStyle => {
+  const b = (s as Partial<StrokeStyle> | null)?.brush;
+  const z = (s as Partial<StrokeStyle> | null)?.size;
+  return {
+    brush: b === "gel" || b === "fountain" || b === "marker" || b === "pencil" ? b : fallbackBrush,
+    size: z === "fine" || z === "regular" || z === "bold" ? z : fallbackSize,
+  };
+};
+
 const getBrushColor = (brush: BrushType) => {
   switch (brush) {
     case "gel":
@@ -107,6 +134,14 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [variants, setVariants] = useState<Stroke[][]>(
     Array.isArray(character.variants) ? character.variants : [],
   );
+  const [strokeStyles, setStrokeStyles] = useState<StrokeStyle[]>(() =>
+    (character.strokes ?? []).map((_, i) => styleFrom((character as { strokeStyles?: unknown[] }).strokeStyles?.[i], "gel", "regular")),
+  );
+  const [variantStyles, setVariantStyles] = useState<StrokeStyle[][]>(() =>
+    (Array.isArray(character.variants) ? character.variants : []).map((v, vi) =>
+      v.map((_, si) => styleFrom((character as { variantStyles?: unknown[][] }).variantStyles?.[vi]?.[si], "gel", "regular")),
+    ),
+  );
   const [activeVariant, setActiveVariant] = useState<number>(-1);
   const [currentStroke, setCurrentStroke] = useState<Point[] | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -115,8 +150,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [strokeSize, setStrokeSize] = useState<StrokeSize>("regular");
   const [canvasStyle, setCanvasStyle] = useState<CanvasStyle>("typography");
   const [eraserSize, setEraserSize] = useState(24);
-  const [undoStack, setUndoStack] = useState<any[]>([]);
-  const [redoStack, setRedoStack] = useState<any[]>([]);
+  const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
@@ -139,76 +174,127 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     return variants[activeVariant] ?? [];
   }, [activeVariant, strokes, variants]);
 
+  const activeStyles = useMemo(() => {
+    if (activeVariant === -1) return strokeStyles;
+    return variantStyles[activeVariant] ?? [];
+  }, [activeVariant, strokeStyles, variantStyles]);
+
   const setActiveStrokes = useCallback(
-    (next: Stroke[]) => {
+    (next: Stroke[], nextStyles?: StrokeStyle[]) => {
       if (activeVariant === -1) {
         setStrokes(next);
+        if (nextStyles) setStrokeStyles(nextStyles);
       } else {
         setVariants((prev) => {
           const updated = [...prev];
           updated[activeVariant] = next;
           return updated;
         });
+        if (nextStyles) {
+          setVariantStyles((prev) => {
+            const updated = [...prev];
+            updated[activeVariant] = nextStyles;
+            return updated;
+          });
+        }
       }
       setIsDirty(true);
     },
     [activeVariant],
   );
 
+  const snapshotNow = useCallback(
+    (): HistoryEntry => ({
+      v: activeVariant,
+      s: cloneStrokes(strokes),
+      vs: cloneVariants(variants),
+      ss: cloneStyles(strokeStyles),
+      vss: cloneVariantStyles(variantStyles),
+    }),
+    [activeVariant, strokes, variants, strokeStyles, variantStyles],
+  );
+
   const pushUndo = useCallback(() => {
-    if (activeVariant === -1) {
-      const snap: Stroke[] = strokes.map((s) => s.map((p) => ({ ...p })));
-      setUndoStack((prev) => [...prev, snap as unknown as Stroke[][][0]]);
-    } else {
-      const snap: Stroke[][] = variants.map((v) => v.map((s) => s.map((p) => ({ ...p }))));
-      setUndoStack((prev) => [...prev, snap as unknown as Stroke[][][0]]);
-    }
+    setUndoStack((prev) => [...prev, snapshotNow()]);
     setRedoStack([]);
-  }, [activeVariant, strokes, variants]);
+  }, [snapshotNow]);
 
   const undo = useCallback(() => {
     if (undoStack.length === 0) return;
     const snapshot = undoStack[undoStack.length - 1];
     setUndoStack((prev) => prev.slice(0, -1));
-    if (activeVariant === -1) {
-      setRedoStack((prev) => [...prev, strokes.map((s) => s.map((p) => ({ ...p })))]);
-      setStrokes(snapshot as unknown as Stroke[]);
-    } else {
-      setRedoStack((prev) => [...prev, variants.map((v) => v.map((s) => s.map((p) => ({ ...p }))))]);
-      setVariants(snapshot as unknown as Stroke[][]);
-    }
+    setRedoStack((prev) => [...prev, snapshotNow()]);
+    setActiveVariant(snapshot.v);
+    setStrokes(cloneStrokes(snapshot.s));
+    setVariants(cloneVariants(snapshot.vs));
+    setStrokeStyles(cloneStyles(snapshot.ss));
+    setVariantStyles(cloneVariantStyles(snapshot.vss));
+    setCurrentStroke(null);
     setIsDirty(true);
-  }, [activeVariant, strokes, undoStack, variants]);
+  }, [snapshotNow, undoStack.length]);
 
   const redo = useCallback(() => {
     if (redoStack.length === 0) return;
     const snapshot = redoStack[redoStack.length - 1];
     setRedoStack((prev) => prev.slice(0, -1));
-    if (activeVariant === -1) {
-      setUndoStack((prev) => [...prev, strokes.map((s) => s.map((p) => ({ ...p })))]);
-      setStrokes(snapshot as unknown as Stroke[]);
-    } else {
-      setUndoStack((prev) => [...prev, variants.map((v) => v.map((s) => s.map((p) => ({ ...p }))))]);
-      setVariants(snapshot as unknown as Stroke[][]);
-    }
+    setUndoStack((prev) => [...prev, snapshotNow()]);
+    setActiveVariant(snapshot.v);
+    setStrokes(cloneStrokes(snapshot.s));
+    setVariants(cloneVariants(snapshot.vs));
+    setStrokeStyles(cloneStyles(snapshot.ss));
+    setVariantStyles(cloneVariantStyles(snapshot.vss));
+    setCurrentStroke(null);
     setIsDirty(true);
-  }, [activeVariant, redoStack, strokes, variants]);
+  }, [redoStack.length, snapshotNow]);
 
   const clear = useCallback(() => {
     if (activeStrokes.length === 0) return;
     pushUndo();
-    setActiveStrokes([]);
+    setActiveStrokes([], []);
     setCurrentStroke(null);
     setQuality(null);
     setShowQuality(false);
   }, [activeStrokes.length, pushUndo, setActiveStrokes]);
 
   const addVariant = useCallback(() => {
+    if (variants.length >= 4) return;
     pushUndo();
     setVariants((prev) => [...prev, []]);
+    setVariantStyles((prev) => [...prev, []]);
     setActiveVariant(variants.length);
     setIsDirty(true);
   }, [pushUndo, variants.length]);
+
+  // Reset local glyph state whenever a different character is opened.
+  // The same component instance is reused across A → B → A, so without
+  // this the previous character's strokes/undo history would leak through.
+  const charKeyRef = useRef(character.char);
+  useEffect(() => {
+    if (charKeyRef.current === character.char) return;
+    charKeyRef.current = character.char;
+    setStrokes(character.strokes ?? []);
+    setVariants(Array.isArray(character.variants) ? character.variants : []);
+    setStrokeStyles(
+      (character.strokes ?? []).map((_, i) =>
+        styleFrom((character as { strokeStyles?: unknown[] }).strokeStyles?.[i], "gel", "regular"),
+      ),
+    );
+    setVariantStyles(
+      (Array.isArray(character.variants) ? character.variants : []).map((v, vi) =>
+        v.map((_, si) =>
+          styleFrom((character as { variantStyles?: unknown[][] }).variantStyles?.[vi]?.[si], "gel", "regular"),
+        ),
+      ),
+    );
+    setActiveVariant(-1);
+    setUndoStack([]);
+    setRedoStack([]);
+    setCurrentStroke(null);
+    setQuality(null);
+    setShowQuality(false);
+    setVariantToDelete(null);
+    setIsDirty(false);
+  }, [character]);
 
   const switchVariant = useCallback(
     (idx: number) => {
@@ -224,6 +310,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     if (variantToDelete === null) return;
     pushUndo();
     setVariants((prev) => prev.filter((_, i) => i !== variantToDelete));
+    setVariantStyles((prev) => prev.filter((_, i) => i !== variantToDelete));
     if (activeVariant === variantToDelete) {
       setActiveVariant(-1);
     } else if (activeVariant > variantToDelete) {
@@ -240,6 +327,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         ...character,
         strokes,
         variants,
+        strokeStyles: cloneStyles(strokeStyles),
+        variantStyles: cloneVariantStyles(variantStyles),
         lastUpdated: Date.now(),
       } as CharacterData;
       await onSave(data);
@@ -251,7 +340,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [character, onSave, strokes, variants]);
+  }, [character, onSave, strokes, variants, strokeStyles, variantStyles]);
 
   const smartSaveAndNext = useCallback(async () => {
     try {
@@ -282,10 +371,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
   const getCanvasPoint = useCallback(
     (clientX: number, clientY: number): Point | null => {
+      // Always map against the canvas element itself (not the padded
+      // container) so the stroke lands exactly under the cursor/finger.
       const canvas = canvasRef.current;
-      const container = containerRef.current;
-      if (!canvas || !container) return null;
-      const rect = container.getBoundingClientRect();
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
       const x = ((clientX - rect.left) / rect.width) * VIRTUAL_WIDTH;
       const y = ((clientY - rect.top) / rect.height) * VIRTUAL_HEIGHT;
       if (Number.isNaN(x) || Number.isNaN(y)) return null;
@@ -294,13 +385,62 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     [],
   );
 
+  const eraseAt = useCallback(
+    (p: Point) => {
+      // Stroke-level erase: any stroke touched by the eraser is removed
+      // whole, so it stays erased after redraw/switch/save. The eraser
+      // slider is in screen px — convert it into virtual canvas units.
+      const canvas = canvasRef.current;
+      const rect = canvas?.getBoundingClientRect();
+      const vRadius =
+        rect && rect.width > 0
+          ? Math.max(3, (eraserSize / rect.width) * VIRTUAL_WIDTH)
+          : Math.max(3, eraserSize / 2);
+      const next: Stroke[] = [];
+      const nextStyles: StrokeStyle[] = [];
+      activeStrokes.forEach((pts, i) => {
+        const hit = pts.some((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) <= vRadius);
+        if (!hit) {
+          next.push(pts);
+          nextStyles.push(activeStyles[i] ?? { brush: brushType, size: strokeSize });
+        }
+      });
+      if (next.length !== activeStrokes.length) {
+        setActiveStrokes(next, nextStyles);
+      }
+    },
+    [activeStrokes, activeStyles, brushType, eraserSize, setActiveStrokes, strokeSize],
+  );
+
+  const capturePointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore — pointer capture is best-effort
+    }
+  }, []);
+
+  const releasePointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const startDrawing = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      capturePointer(e);
       if (isEraser) {
+        pushUndo();
         setIsDrawing(true);
         setPointerId(e.pointerId);
         const p = getCanvasPoint(e.clientX, e.clientY);
         if (p) {
+          // Erase immediately so a single tap also erases.
+          eraseAt(p);
           setLastPoint(p);
           setLastPointerTime(e.timeStamp);
           setPointerSamples([p]);
@@ -322,7 +462,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       }
       e.preventDefault();
     },
-    [getCanvasPoint, isEraser, pushUndo],
+    [capturePointer, eraseAt, getCanvasPoint, isEraser, pushUndo],
   );
 
   const draw = useCallback(() => {
@@ -428,13 +568,16 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     for (let i = 0; i < allStrokes.length; i++) {
       const pts = allStrokes[i];
       if (pts.length < 1) continue;
+      // Each stored stroke keeps the brush/size it was drawn with, so
+      // changing tools only affects new strokes — never old ones.
+      const st = activeStyles[i] ?? { brush: brushType, size: strokeSize };
       ctx.save();
       ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = getBrushColor(brushType);
+      ctx.strokeStyle = getBrushColor(st.brush);
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      ctx.globalAlpha = BrushConfig[brushType].opacity;
-      const baseWidth = 1.2 * SizeConfig[strokeSize] * BrushConfig[brushType].lineWidthMultiplier;
+      ctx.globalAlpha = BrushConfig[st.brush].opacity;
+      const baseWidth = 1.2 * SizeConfig[st.size] * BrushConfig[st.brush].lineWidthMultiplier;
       if (pts.length === 1) {
         ctx.beginPath();
         ctx.arc(pts[0].x, pts[0].y, baseWidth * 0.5, 0, Math.PI * 2);
@@ -479,25 +622,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     }
 
     ctx.restore();
-  }, [activeStrokes, brushType, canvasStyle, character.char, currentStroke, dpr, isEraser, strokeSize]);
-
-  const eraseAt = useCallback(
-    (p: Point) => {
-      const radius = eraserSize / 2;
-      const next = activeStrokes
-        .map((pts) => {
-          const kept = pts.filter((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) > radius * 0.08);
-          if (kept.length === 0) return null;
-          if (kept.length === pts.length) return pts;
-          return kept;
-        })
-        .filter((s): s is Stroke => s !== null);
-      if (next.length !== activeStrokes.length) {
-        setActiveStrokes(next);
-      }
-    },
-    [activeStrokes, eraserSize, setActiveStrokes],
-  );
+  }, [activeStrokes, activeStyles, brushType, canvasStyle, character.char, currentStroke, dpr, isEraser, strokeSize]);
 
   const moveDrawing = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -530,23 +655,25 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const endDrawing = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (pointerId !== null && e.pointerId !== pointerId) return;
+      releasePointer(e);
       setIsDrawing(false);
       setPointerId(null);
       setEraserPos(null);
       if (!isEraser && currentStroke && currentStroke.length > 0) {
         const stroke: Stroke = currentStroke.map((p) => ({ x: p.x, y: p.y }));
-        setActiveStrokes([...activeStrokes, stroke as Stroke]);
+        setActiveStrokes([...activeStrokes, stroke], [...activeStyles, { brush: brushType, size: strokeSize }]);
         setCurrentStroke(null);
       }
       setLastPoint(null);
       setPointerSamples([]);
       e.preventDefault();
     },
-    [activeStrokes, currentStroke, isEraser, pointerId, setActiveStrokes],
+    [activeStrokes, activeStyles, brushType, currentStroke, isEraser, pointerId, releasePointer, setActiveStrokes, strokeSize],
   );
 
   const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (pointerId !== null && e.pointerId !== pointerId) return;
+    releasePointer(e);
     setIsDrawing(false);
     setPointerId(null);
     setCurrentStroke(null);
@@ -554,7 +681,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setPointerSamples([]);
     setEraserPos(null);
     e.preventDefault();
-  }, [pointerId]);
+  }, [pointerId, releasePointer]);
 
   useEffect(() => {
     draw();
@@ -581,8 +708,48 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     return () => window.removeEventListener("resize", handleResize);
   }, [draw]);
 
+  const toggleFullscreen = useCallback(() => {
+    const el = stageRef.current ?? document.documentElement;
+    if (!document.fullscreenElement) {
+      (el.requestFullscreen as (() => Promise<void>) | undefined)?.call(el)?.then(
+        () => setIsFullscreen(true),
+        () => {},
+      );
+    } else {
+      (document.exitFullscreen as (() => Promise<void>) | undefined)?.call(document)?.then(
+        () => setIsFullscreen(false),
+        () => {},
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+      setDpr(window.devicePixelRatio || 1);
+      draw();
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, [draw]);
+
+  const handleClose = useCallback(() => {
+    if (!onClose) return;
+    // Flush any pending work before leaving so nothing is lost.
+    saveAndGo(() => onClose());
+  }, [onClose, saveAndGo]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      // Single-key shortcuts must not hijack normal typing.
+      if (typing && !e.metaKey && !e.ctrlKey) return;
       if (e.metaKey || e.ctrlKey) {
         if (e.key === "z" && !e.shiftKey) {
           e.preventDefault();
@@ -637,7 +804,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   }, [isDirty, performSave]);
 
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-  const isCompleted = (character as any)?.completed === true || (character.strokes?.length ?? 0) > 0;
+  const isCompleted =
+    strokes.length > 0 || variants.some((v) => v.length > 0);
   const category = character.category || "uppercase";
   const proj: any = project || {};
   const charsObj = proj?.characters;
@@ -751,12 +919,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         {/* Right */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           <div className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 sm:flex">
-            <span>Autosaved</span>
+            <span>{isSaving ? "Saving…" : "Autosaved"}</span>
             <Check className="h-3.5 w-3.5" />
           </div>
           <button
             type="button"
-            onClick={() => setIsFullscreen((f) => !f)}
+            onClick={toggleFullscreen}
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E3] bg-white text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900"
           >
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
@@ -764,7 +932,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           {onClose ? (
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E3] bg-white text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900"
             >
               <X className="h-4 w-4" />
@@ -917,7 +1085,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     onPointerMove={moveDrawing}
                     onPointerUp={endDrawing}
                     onPointerCancel={handlePointerCancel}
-                    onPointerLeave={handlePointerCancel}
                     className="block h-full w-full max-w-full touch-none cursor-crosshair"
                     style={{ touchAction: "none" }}
                   />
