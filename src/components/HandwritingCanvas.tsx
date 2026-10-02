@@ -864,12 +864,30 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           />
         ) : null}
         {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0 && activeStrokeRef.current.length === 0 ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-4 text-center font-mono text-[9px] uppercase tracking-[0.3em] text-neutral-300"
-          >
-            WRITE NATURALLY
-          </div>
+          <>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 flex items-center justify-center select-none font-serif text-[clamp(160px,30vw,320px)] leading-none text-neutral-900/5"
+            >
+              {character.char}
+            </div>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-4 text-center font-mono text-[9px] uppercase tracking-[0.3em] text-neutral-300"
+            >
+              WRITE NATURALLY
+            </div>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute right-3 top-3 select-none rounded-xl bg-amber-50 px-2.5 py-1.5 text-[9px] leading-tight text-amber-900 shadow-sm ring-1 ring-amber-200 sm:text-[10px]"
+            >
+              Don't worry
+              <br />
+              about perfection!
+              <br />
+              Just be you.
+            </div>
+          </>
         ) : null}
       </div>
     </div>
