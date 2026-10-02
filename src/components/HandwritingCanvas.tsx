@@ -888,8 +888,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 {/* Canvas stage */}
                 <div
                   ref={containerRef}
-                  className="relative flex min-h-0 w-full flex-1 items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
-                  style={{ overflow: "hidden", aspectRatio: "1 / 1" }}
+                  className="relative flex min-h-0 w-full items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
+                  style={{ overflow: "hidden", aspectRatio: "1 / 1", maxHeight: "100%" }}
                 >
                   {isEraser && eraserPos ? (
                     <div
