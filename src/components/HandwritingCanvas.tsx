@@ -1,1123 +1,1231 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { Stroke, Point, CharacterData } from '../types';
-import { analyzeCharacterStrokes } from '../utils/qualityCheck';
 import {
-  RotateCcw,
-  RotateCw,
-  Trash2,
+  AlertCircle,
+  ArrowRight,
   Check,
-  AlertTriangle,
-  PenTool,
-  Eraser,
   ChevronLeft,
   ChevronRight,
-  Eye,
-  EyeOff,
-  Plus,
+  Crown,
+  Edit2,
+  Eraser,
   Maximize2,
   Minimize2,
-  Keyboard,
-  X,
-  AlertCircle,
-  Loader2,
+  PenTool,
+  RotateCcw,
+  RotateCw,
   Sparkles,
-  Cloud,
-  CloudOff,
-  SlidersHorizontal,
-  Crown,
-} from 'lucide-react';
+  Trash2,
+  X,
+} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type PenStyle = 'gel' | 'fountain' | 'marker' | 'pencil';
-export type GuidelineStyle = 'typography' | 'notebook' | 'dots' | 'blank';
-export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+import type {
+  CharacterData,
+  FontProject,
+  Point,
+  Stroke,
+} from "../types";
+import type { QualityAnalysis } from "../utils/qualityCheck";
+import { analyzeCharacterStrokes } from "../utils/qualityCheck";
 
-interface HandwritingCanvasProps {
-  character: CharacterData;
-  onSave: (char: string, strokes: Stroke[], variants?: Stroke[][]) => void;
-  onClose: () => void;
-  onPrevious?: () => void;
-  onNext?: () => void;
-  hasPrevious?: boolean;
-  hasNext?: boolean;
-  allCharacterList?: { char: string; category: string; hasStrokes: boolean }[];
-  onSelectCharacter?: (char: string) => void;
-  projectName?: string;
-  completedCount?: number;
-  totalCount?: number;
-}
+const analyzeQuality = (strokes: Stroke[]) => analyzeCharacterStrokes(strokes, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
 
 const VIRTUAL_WIDTH = 400;
 const VIRTUAL_HEIGHT = 400;
 
-const GUIDELINES = {
-  ascender: 60,
-  capHeight: 110,
-  midline: 190,
-  baseline: 300,
-  descender: 360,
+const MIN_POINT_SPACING = 0.8;
+const MAX_POINTER_SAMPLES = 3;
+
+type BrushType = "gel" | "fountain" | "marker" | "pencil";
+type StrokeSize = "fine" | "regular" | "bold";
+type CanvasStyle = "typography" | "notebook" | "dots" | "blank";
+type ToolMode = "pen" | "eraser";
+
+interface HandwritingCanvasProps {
+  character: CharacterData;
+  project?: FontProject;
+  onSave: (data: CharacterData) => Promise<void> | void;
+  onNext: () => void;
+  onPrevious?: () => void;
+  hasNext?: boolean;
+  hasPrevious?: boolean;
+  completedCount?: number;
+  totalCount?: number;
+  projectName?: string;
+  onClose?: () => void;
+  allCharacterList?: { char: string; category: string; hasStrokes: boolean }[];
+  onSelectCharacter?: (char: string) => void;
+}
+
+const BrushConfig = {
+  gel: { lineWidthMultiplier: 1.05, opacity: 0.98 },
+  fountain: { lineWidthMultiplier: 0.92, opacity: 0.96 },
+  marker: { lineWidthMultiplier: 1.25, opacity: 0.94 },
+  pencil: { lineWidthMultiplier: 0.85, opacity: 0.88 },
+} as const;
+
+const SizeConfig = {
+  fine: 1.25,
+  regular: 1.8,
+  bold: 2.6,
+} as const;
+
+const getBrushColor = (brush: BrushType) => {
+  switch (brush) {
+    case "gel":
+      return "#111111";
+    case "fountain":
+      return "#1A1A1A";
+    case "marker":
+      return "#0F0F0F";
+    case "pencil":
+      return "#1F1F1F";
+    default:
+      return "#111111";
+  }
 };
-
-const ERASER_RADIUS = { min: 6, max: 80, default: 30 };
-const PEN_WIDTHS = { Fine: 3.5, Regular: 5.5, Bold: 8 } as const;
-
-const WRITING_TIPS = [
-  "Don't try to make it perfect. Make it yours.",
-  'Write naturally — your little imperfections are part of the font.',
-  'Keep your size consistent across every letter.',
-  'Relax your hand and write normally.',
-  'Stay between the cap line and the baseline.',
-  'Slow down a little. Accuracy beats speed here.',
-];
-
-const MILESTONES: { at: number; text: string }[] = [
-  { at: 10, text: "You're getting a typeface." },
-  { at: 25, text: 'Your handwriting is taking shape.' },
-  { at: 40, text: 'Almost yours.' },
-  { at: 52, text: 'Your handwriting is ready to become a font.' },
-];
-
-const CATEGORY_TABS: { key: string; label: string }[] = [
-  { key: 'uppercase', label: 'A-Z' },
-  { key: 'lowercase', label: 'a-z' },
-  { key: 'numbers', label: '0-9' },
-  { key: 'symbols', label: 'Symbols' },
-];
-
-const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   character,
+  project,
   onSave,
-  onClose,
-  onPrevious,
   onNext,
+  onPrevious,
+  hasNext = true,
   hasPrevious = false,
-  hasNext = false,
-  allCharacterList = [],
+  completedCount = 0,
+  totalCount = 0,
+  projectName = "My Handwriting",
+  onClose,
+  allCharacterList,
   onSelectCharacter,
-  projectName = 'Your typeface',
-  completedCount,
-  totalCount,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const frameRef = useRef<number | null>(null);
-  const activeStrokeRef = useRef<Point[]>([]);
-  const isDrawingRef = useRef(false);
-  const pointerTypeRef = useRef<string | null>(null);
-  const erasingRef = useRef(false);
-  const primaryRef = useRef<Stroke[]>(character.strokes ? clone(character.strokes) : []);
-  const dirtyRef = useRef(false);
-  const celebratedRef = useRef<number>(0);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
 
-  const [strokes, setStrokes] = useState<Stroke[]>(() => (character.strokes ? clone(character.strokes) : []));
-  const [undoStack, setUndoStack] = useState<Stroke[][]>([]);
-  const [redoStack, setRedoStack] = useState<Stroke[][]>([]);
-  const [variants, setVariants] = useState<Stroke[][]>(() =>
-    character.variants ? clone(character.variants) : [],
+  const [strokes, setStrokes] = useState<Stroke[]>(character.strokes ?? []);
+  const [variants, setVariants] = useState<Stroke[][]>(
+    Array.isArray(character.variants) ? character.variants : [],
   );
-  const [activeVariant, setActiveVariant] = useState(-1);
+  const [activeVariant, setActiveVariant] = useState<number>(-1);
+  const [currentStroke, setCurrentStroke] = useState<Point[] | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [toolMode, setToolMode] = useState<ToolMode>("pen");
+  const [brushType, setBrushType] = useState<BrushType>("gel");
+  const [strokeSize, setStrokeSize] = useState<StrokeSize>("regular");
+  const [canvasStyle, setCanvasStyle] = useState<CanvasStyle>("typography");
+  const [eraserSize, setEraserSize] = useState(24);
+  const [undoStack, setUndoStack] = useState<any[]>([]);
+  const [redoStack, setRedoStack] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [showQuality, setShowQuality] = useState(false);
+  const [quality, setQuality] = useState<QualityAnalysis | null>(null);
   const [variantToDelete, setVariantToDelete] = useState<number | null>(null);
-
-  const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
-  const [penStyle, setPenStyle] = useState<PenStyle>('gel');
-  const [strokeWidth, setStrokeWidth] = useState<number>(PEN_WIDTHS.Regular);
-  const [eraserRadius, setEraserRadius] = useState<number>(ERASER_RADIUS.default);
-  const [guidelineStyle, setGuidelineStyle] = useState<GuidelineStyle>('typography');
-  const [showGuidelines, setShowGuidelines] = useState(true);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
+  const [pointerId, setPointerId] = useState<number | null>(null);
+  const [lastPoint, setLastPoint] = useState<Point | null>(null);
+  const [lastPointerTime, setLastPointerTime] = useState<number>(0);
+  const [pointerSamples, setPointerSamples] = useState<Point[]>([]);
+  const [eraserPos, setEraserPos] = useState<{ x: number; y: number } | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [eraserCursor, setEraserCursor] = useState<{ x: number; y: number } | null>(null);
-  const [isHovering, setIsHovering] = useState(false);
-  const [activeTab, setActiveTab] = useState('uppercase');
 
-  const [saveState, setSaveState] = useState<SaveState>('idle');
-  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
-  const [milestone, setMilestone] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
-  const [panelTab, setPanelTab] = useState<'chars' | 'tools'>('chars');
-  const [tipIndex, setTipIndex] = useState(0);
-  const [stageBox, setStageBox] = useState(0);
+  const isEraser = toolMode === "eraser";
 
+  const activeStrokes = useMemo(() => {
+    if (activeVariant === -1) return strokes;
+    return variants[activeVariant] ?? [];
+  }, [activeVariant, strokes, variants]);
 
-
-  // ---------------------------------------------------------------- rendering
-  // Everything the renderer needs is mirrored into a ref so a frame that is
-  // already in flight can never repaint with stale strokes and wipe fresh ink.
-  const liveRef = useRef({
-    strokes,
-    variants,
-    activeVariant,
-    penStyle,
-    strokeWidth,
-    guidelineStyle,
-    showGuidelines,
-    char: character.char,
-  });
-  liveRef.current = {
-    strokes,
-    variants,
-    activeVariant,
-    penStyle,
-    strokeWidth,
-    guidelineStyle,
-    showGuidelines,
-    char: character.char,
-  };
-
-  const paint = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const { strokes: liveStrokes, variants: liveVariants, activeVariant: liveVariant } = liveRef.current;
-    const { penStyle: livePen, strokeWidth: liveWidth } = liveRef.current;
-    const { guidelineStyle: liveGuideline, showGuidelines: liveShow, char: liveChar } = liveRef.current;
-    const committed = liveVariant === -1 ? liveStrokes : liveVariants[liveVariant] ?? [];
-    const liveActive = liveVariant === -1 ? liveStrokes : liveVariants[liveVariant] ?? [];
-    const pending = activeStrokeRef.current;
-
-    // The backing store is sized to the displayed box (times DPR) while all
-    // drawing happens in the fixed 400x400 virtual coordinate space.
-    const scale = canvas.width / VIRTUAL_WIDTH;
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-    ctx.clearRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
-
-    if (liveShow && liveGuideline !== 'blank') {
-      ctx.save();
-      ctx.lineWidth = 1;
-      ctx.setLineDash([5, 5]);
-      if (liveGuideline === 'typography') {
-        ctx.strokeStyle = '#e7e5e4';
-        [GUIDELINES.ascender, GUIDELINES.capHeight, GUIDELINES.descender].forEach((y) => {
-          ctx.beginPath();
-          ctx.moveTo(18, y);
-          ctx.lineTo(VIRTUAL_WIDTH - 18, y);
-          ctx.stroke();
-        });
-        ctx.strokeStyle = '#d6d3d1';
-        ctx.beginPath();
-        ctx.moveTo(18, GUIDELINES.midline);
-        ctx.lineTo(VIRTUAL_WIDTH - 18, GUIDELINES.midline);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.strokeStyle = '#a8a29e';
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.moveTo(18, GUIDELINES.baseline);
-        ctx.lineTo(VIRTUAL_WIDTH - 18, GUIDELINES.baseline);
-        ctx.stroke();
-      } else if (liveGuideline === 'notebook') {
-        ctx.strokeStyle = '#e7e5e4';
-        for (let y = 40; y <= 360; y += 32) {
-          ctx.beginPath();
-          ctx.moveTo(18, y);
-          ctx.lineTo(VIRTUAL_WIDTH - 18, y);
-          ctx.stroke();
-        }
-        ctx.setLineDash([]);
-        ctx.strokeStyle = '#a8a29e';
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.moveTo(18, GUIDELINES.baseline);
-        ctx.lineTo(VIRTUAL_WIDTH - 18, GUIDELINES.baseline);
-        ctx.stroke();
-      } else {
-        ctx.setLineDash([]);
-        ctx.fillStyle = '#d6d3d1';
-        for (let x = 30; x <= 370; x += 28) {
-          for (let y = 30; y <= 370; y += 28) {
-            ctx.beginPath();
-            ctx.arc(x, y, 1.1, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        ctx.strokeStyle = '#a8a29e';
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([6, 4]);
-        ctx.beginPath();
-        ctx.moveTo(20, GUIDELINES.baseline);
-        ctx.lineTo(VIRTUAL_WIDTH - 20, GUIDELINES.baseline);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    if (liveActive.length === 0 && pending.length === 0) {
-      ctx.save();
-      ctx.font = '250px "Plus Jakarta Sans", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillStyle = 'rgba(28, 25, 23, 0.05)';
-      ctx.fillText(liveChar, VIRTUAL_WIDTH / 2, GUIDELINES.baseline);
-      ctx.restore();
-    }
-
-    const drawStroke = (pts: Point[], width: number) => {
-      if (pts.length === 0) return;
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = livePen === 'pencil' ? '#334155' : '#1c1917';
-      const w = livePen === 'marker' ? width * 1.35 : livePen === 'pencil' ? Math.max(2.5, width * 0.85) : width;
-      if (pts.length === 1) {
-        ctx.fillStyle = ctx.strokeStyle;
-        ctx.beginPath();
-        ctx.arc(pts[0].x, pts[0].y, w / 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-        return;
-      }
-      if (livePen === 'fountain') {
-        for (let i = 0; i < pts.length - 1; i += 1) {
-          const a = pts[i];
-          const b = pts[i + 1];
-          const angle = Math.atan2(b.y - a.y, b.x - a.x);
-          ctx.lineWidth = Math.max(1.5, width * (0.5 + Math.abs(Math.cos(angle - Math.PI / 4)) * 0.9));
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
-        }
-      } else {
-        ctx.lineWidth = w;
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length - 1; i += 1) {
-          const mx = (pts[i].x + pts[i + 1].x) / 2;
-          const my = (pts[i].y + pts[i + 1].y) / 2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
-        }
-        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        ctx.stroke();
-      }
-      ctx.restore();
-    };
-
-    committed.forEach((s) => drawStroke(s, liveWidth));
-    if (pending.length > 0) drawStroke(pending, liveWidth);
-  }, []);
-
-  const schedulePaint = useCallback(() => {
-    if (frameRef.current !== null) return;
-    frameRef.current = requestAnimationFrame(() => {
-      frameRef.current = null;
-      paint();
-    });
-  }, [paint]);
-
-  // Repaint after every render, and whenever the backing store is resized.
-  useEffect(() => {
-    schedulePaint();
-  });
-
-  useEffect(
-    () => () => {
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-    },
-    [],
-  );
-
-  // Size the square stage to whatever room the editor actually has.
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const measure = () => {
-      const rect = stage.getBoundingClientRect();
-      const side = Math.floor(Math.min(rect.width, rect.height));
-      if (side < 160) return;
-      if (side !== stageBox) setStageBox(side);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(stage);
-    window.addEventListener('resize', measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Keep the backing store matched to the displayed size on every layout change.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const display = canvas.getBoundingClientRect();
-    const side = Math.max(1, Math.round((display.width || stageBox || VIRTUAL_WIDTH) * dpr));
-    const square = Math.min(side, Math.max(1, Math.round((display.height || side / dpr) * dpr)));
-    if (canvas.width !== square || canvas.height !== square) {
-      canvas.width = square;
-      canvas.height = square;
-    }
-    schedulePaint();
-  }, [stageBox, schedulePaint]);
-
-  // Lock page scroll (html + body) while the editor is open, otherwise the page
-// behind the overlay can still be wheel/touch scrolled.
-  useEffect(() => {
-    const root = document.documentElement;
-    const previousRoot = root.style.overflow;
-    const previousBody = document.body.style.overflow;
-    root.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
-    return () => {
-      root.style.overflow = previousRoot;
-      document.body.style.overflow = previousBody;
-    };
-  }, []);
-
-  useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
-    return () => {
-      window.removeEventListener('online', on);
-      window.removeEventListener('offline', off);
-    };
-  }, []);
-
-  // Load the character when the target changes.
-  useEffect(() => {
-    const loaded = character.strokes ? clone(character.strokes) : [];
-    primaryRef.current = loaded;
-    dirtyRef.current = false;
-    setStrokes(loaded);
-    setVariants(character.variants ? clone(character.variants) : []);
-    setActiveVariant(-1);
-    setUndoStack([]);
-    setRedoStack([]);
-    setSaveState('idle');
-    setMilestone(null);
-    activeStrokeRef.current = [];
-    const ownCategory = character.category;
-    if (ownCategory) setActiveTab(ownCategory);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [character.char]);
-
-  // Rotating writing tip.
-  useEffect(() => {
-    const id = window.setInterval(() => setTipIndex((i) => (i + 1) % WRITING_TIPS.length), 9000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const quality = useMemo(
-    () => analyzeCharacterStrokes((activeVariant === -1 ? strokes : variants[activeVariant] ?? []), VIRTUAL_WIDTH, VIRTUAL_HEIGHT),
-    [(activeVariant === -1 ? strokes : variants[activeVariant] ?? [])],
-  );
-
-  const done = completedCount ?? allCharacterList.filter((c) => c.hasStrokes).length;
-  const total = totalCount ?? allCharacterList.length;
-  const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  const tabChars = useMemo(
-    () => allCharacterList.filter((c) => c.category === activeTab),
-    [allCharacterList, activeTab],
-  );
-
-  const currentIndex = allCharacterList.findIndex((c) => c.char === character.char);
-
-  // ----------------------------------------------------------------- history
-  const pushUndo = useCallback((snapshot: Stroke[]) => {
-    setUndoStack((prev) => {
-      const next = [...prev, clone(snapshot)];
-      return next.length > 60 ? next.slice(next.length - 60) : next;
-    });
-    setRedoStack([]);
-  }, []);
-
-  const writeStrokes = useCallback(
+  const setActiveStrokes = useCallback(
     (next: Stroke[]) => {
-      dirtyRef.current = true;
       if (activeVariant === -1) {
-        primaryRef.current = next;
         setStrokes(next);
-      } else
+      } else {
         setVariants((prev) => {
-          const copy = [...prev];
-          copy[activeVariant] = next;
-          return copy;
+          const updated = [...prev];
+          updated[activeVariant] = next;
+          return updated;
         });
+      }
+      setIsDirty(true);
     },
     [activeVariant],
   );
+
+  const pushUndo = useCallback(() => {
+    if (activeVariant === -1) {
+      const snap: Stroke[] = strokes.map((s) => s.map((p) => ({ ...p })));
+      setUndoStack((prev) => [...prev, snap as unknown as Stroke[][][0]]);
+    } else {
+      const snap: Stroke[][] = variants.map((v) => v.map((s) => s.map((p) => ({ ...p }))));
+      setUndoStack((prev) => [...prev, snap as unknown as Stroke[][][0]]);
+    }
+    setRedoStack([]);
+  }, [activeVariant, strokes, variants]);
 
   const undo = useCallback(() => {
     if (undoStack.length === 0) return;
-    const previous = undoStack[undoStack.length - 1];
+    const snapshot = undoStack[undoStack.length - 1];
     setUndoStack((prev) => prev.slice(0, -1));
-    setRedoStack((prev) => [...prev, clone((activeVariant === -1 ? strokes : variants[activeVariant] ?? []))]);
-    writeStrokes(clone(previous));
-  }, [undoStack, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), writeStrokes]);
+    if (activeVariant === -1) {
+      setRedoStack((prev) => [...prev, strokes.map((s) => s.map((p) => ({ ...p })))]);
+      setStrokes(snapshot as unknown as Stroke[]);
+    } else {
+      setRedoStack((prev) => [...prev, variants.map((v) => v.map((s) => s.map((p) => ({ ...p }))))]);
+      setVariants(snapshot as unknown as Stroke[][]);
+    }
+    setIsDirty(true);
+  }, [activeVariant, strokes, undoStack, variants]);
 
   const redo = useCallback(() => {
     if (redoStack.length === 0) return;
-    const next = redoStack[redoStack.length - 1];
+    const snapshot = redoStack[redoStack.length - 1];
     setRedoStack((prev) => prev.slice(0, -1));
-    setUndoStack((prev) => [...prev, clone((activeVariant === -1 ? strokes : variants[activeVariant] ?? []))]);
-    writeStrokes(clone(next));
-  }, [redoStack, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), writeStrokes]);
+    if (activeVariant === -1) {
+      setUndoStack((prev) => [...prev, strokes.map((s) => s.map((p) => ({ ...p })))]);
+      setStrokes(snapshot as unknown as Stroke[]);
+    } else {
+      setUndoStack((prev) => [...prev, variants.map((v) => v.map((s) => s.map((p) => ({ ...p }))))]);
+      setVariants(snapshot as unknown as Stroke[][]);
+    }
+    setIsDirty(true);
+  }, [activeVariant, redoStack, strokes, variants]);
 
   const clear = useCallback(() => {
-    if ((activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0) return;
-    pushUndo((activeVariant === -1 ? strokes : variants[activeVariant] ?? []));
-    writeStrokes([]);
-  }, [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []), pushUndo, writeStrokes]);
-
-  // ------------------------------------------------------------------ canvas
-  const toCanvasPoint = useCallback(
-    (e: { clientX: number; clientY: number; pressure?: number }): Point | null => {
-      const canvas = canvasRef.current;
-      if (!canvas) return null;
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return null;
-      return {
-        x: ((e.clientX - rect.left) / rect.width) * VIRTUAL_WIDTH,
-        y: ((e.clientY - rect.top) / rect.height) * VIRTUAL_HEIGHT,
-        pressure: e.pressure && e.pressure > 0 ? e.pressure : undefined,
-      };
-    },
-    [],
-  );
-
-  // Eraser ring position, measured inside the square stage (not the viewport).
-  const setStagePoint = useCallback((e: { clientX: number; clientY: number }) => {
-    // Measure the canvas itself: the ring is absolutely positioned inside the
-    // square stage, and stageRef is the larger centring wrapper around it.
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width === 0) return;
-    setEraserCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  }, []);
-
-  const eraseAt = useCallback(
-    (point: Point) => {
-      const radius = eraserRadius;
-      const next: Stroke[] = [];
-      let changed = false;
-      (activeVariant === -1 ? strokes : variants[activeVariant] ?? []).forEach((stroke) => {
-        const survivors = stroke.filter((p) => Math.hypot(p.x - point.x, p.y - point.y) > radius);
-        if (survivors.length !== stroke.length) {
-          changed = true;
-          if (survivors.length > 1) next.push(survivors);
-        } else {
-          next.push(stroke);
-        }
-      });
-      if (!changed) return;
-      if (!erasingRef.current) {
-        erasingRef.current = true;
-        pushUndo((activeVariant === -1 ? strokes : variants[activeVariant] ?? []));
-      }
-      writeStrokes(next);
-    },
-    [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []), eraserRadius, pushUndo, writeStrokes],
-  );
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLCanvasElement>) => {
-      e.preventDefault();
-      if (pointerTypeRef.current === 'pen' && e.pointerType === 'touch') return;
-      pointerTypeRef.current = e.pointerType;
-      const point = toCanvasPoint(e);
-      if (!point) return;
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        /* capture is best effort */
-      }
-      isDrawingRef.current = true;
-      erasingRef.current = false;
-      if (tool === 'eraser') {
-        setStagePoint(e);
-        eraseAt(point);
-        return;
-      }
-      pushUndo((activeVariant === -1 ? strokes : variants[activeVariant] ?? []));
-      activeStrokeRef.current = [point];
-      schedulePaint();
-    },
-    [tool, toCanvasPoint, eraseAt, pushUndo, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), schedulePaint],
-  );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (tool === 'eraser') setStagePoint(e);
-      if (!isDrawingRef.current) return;
-      e.preventDefault();
-      if (pointerTypeRef.current === 'pen' && e.pointerType === 'touch') return;
-
-      if (tool === 'eraser') {
-        // Consume every coalesced sample so fast drags erase without gaps.
-        const samples = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
-        const list = samples.length ? samples : [e.nativeEvent];
-        list.forEach((sample) => {
-          const p = toCanvasPoint(sample);
-          if (p) eraseAt(p);
-        });
-        return;
-      }
-
-      const pts = activeStrokeRef.current;
-      const push = (x: number, y: number) => {
-        const last = pts[pts.length - 1];
-        // Sub-pixel spacing keeps fast movement smooth instead of angular.
-        if (last && Math.hypot(x - last.x, y - last.y) < 0.8) return;
-        pts.push({ x, y });
-      };
-      const samples = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
-      if (samples.length) {
-        samples.forEach((sample) => {
-          const p = toCanvasPoint(sample);
-          if (p) push(p.x, p.y);
-        });
-      } else {
-        const p = toCanvasPoint(e);
-        if (p) push(p.x, p.y);
-      }
-      schedulePaint();
-    },
-    [tool, toCanvasPoint, eraseAt, schedulePaint],
-  );
-
-  const finishStroke = useCallback(
-    (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (!isDrawingRef.current) return;
-      e.preventDefault();
-      isDrawingRef.current = false;
-      erasingRef.current = false;
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {
-        /* capture is best effort */
-      }
-      if (tool === 'eraser') return;
-      const finished = activeStrokeRef.current;
-      activeStrokeRef.current = [];
-      if (finished.length === 0) {
-        setUndoStack((prev) => prev.slice(0, -1));
-        schedulePaint();
-        return;
-      }
-      writeStrokes([...(activeVariant === -1 ? strokes : variants[activeVariant] ?? []), finished]);
-    },
-    [tool, writeStrokes, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), schedulePaint],
-  );
-
-  // ------------------------------------------------------------------ saving
-  const commit = useCallback((): boolean => {
-    const primary = activeVariant === -1 ? (activeVariant === -1 ? strokes : variants[activeVariant] ?? []) : primaryRef.current;
-    const finalVariants =
-      activeVariant === -1 ? variants : variants.map((v, i) => (i === activeVariant ? (activeVariant === -1 ? strokes : variants[activeVariant] ?? []) : v));
-    try {
-      onSave(character.char, clone(primary), finalVariants.length ? clone(finalVariants) : undefined);
-      if (activeVariant === -1) primaryRef.current = clone(primary);
-      dirtyRef.current = false;
-      return true;
-    } catch {
-      return false;
-    }
-  }, [activeVariant, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), variants, character.char, onSave]);
-
-  const performSave = useCallback(() => {
-    if ((activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0) {
-      commit();
-      setSaveState('saved');
-      window.setTimeout(() => setSaveState('idle'), 1200);
-      return;
-    }
-    setSaveState('saving');
-    window.setTimeout(() => {
-      setSaveState(commit() ? 'saved' : 'error');
-      window.setTimeout(() => setSaveState((s) => (s === 'error' ? 'error' : 'idle')), 1600);
-    }, 260);
-  }, [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length, commit]);
-
-  // Autosave: debounced so pointer movement never triggers it.
-  useEffect(() => {
-    if (!dirtyRef.current) return;
-    const id = window.setTimeout(() => {
-      setSaveState('saving');
-      window.setTimeout(() => {
-        setSaveState(commit() ? 'saved' : 'error');
-      }, 200);
-    }, 1400);
-    return () => window.clearTimeout(id);
-  }, [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []), commit]);
-
-  // Milestones fire once, the first time the count crosses a threshold.
-  useEffect(() => {
-    const hit = [...MILESTONES].reverse().find((m) => done >= m.at);
-    if (!hit || hit.at <= celebratedRef.current) return;
-    celebratedRef.current = hit.at;
-    setMilestone(hit.text);
-    const id = window.setTimeout(() => setMilestone(null), 3600);
-    return () => window.clearTimeout(id);
-  }, [done]);
-
-  const saveAndGo = useCallback(
-    (go?: () => void) => {
-      if ((activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0) {
-        commit();
-        go?.();
-        return;
-      }
-      setSaveState('saving');
-      window.setTimeout(() => {
-        const ok = commit();
-        setSaveState(ok ? 'saved' : 'error');
-        if (ok) go?.();
-        else
-          window.setTimeout(() => {
-            setSaveState((s) => (s === 'error' ? 'error' : 'idle'));
-          }, 1600);
-      }, 260);
-    },
-    [(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length, commit],
-  );
-
-  // Smart next: jump to the next character that still needs work.
-  const nextIncomplete = useCallback(() => {
-    if (allCharacterList.length === 0) return onNext;
-    const idx = allCharacterList.findIndex((c) => c.char === character.char);
-    for (let i = idx + 1; i < allCharacterList.length; i += 1) {
-      if (!allCharacterList[i].hasStrokes) {
-        return () => onSelectCharacter?.(allCharacterList[i].char);
-      }
-    }
-    return onNext;
-  }, [allCharacterList, character.char, onNext, onSelectCharacter]);
-
-  const smartSaveAndNext = useCallback(() => {
-    const go = nextIncomplete();
-    saveAndGo(go);
-  }, [nextIncomplete, saveAndGo]);
-
-  // ----------------------------------------------------------------- variants
-  const selectVariant = useCallback(
-    (index: number) => {
-      if (index === activeVariant) return;
-      setActiveVariant(index);
-      setUndoStack([]);
-      setRedoStack([]);
-      activeStrokeRef.current = [];
-    },
-    [activeVariant],
-  );
+    if (activeStrokes.length === 0) return;
+    pushUndo();
+    setActiveStrokes([]);
+    setCurrentStroke(null);
+    setQuality(null);
+    setShowQuality(false);
+  }, [activeStrokes.length, pushUndo, setActiveStrokes]);
 
   const addVariant = useCallback(() => {
-    if (variants.length >= 3) return;
+    pushUndo();
     setVariants((prev) => [...prev, []]);
     setActiveVariant(variants.length);
-  }, [variants.length]);
+    setIsDirty(true);
+  }, [pushUndo, variants.length]);
 
-  const confirmVariantDelete = useCallback(
-    (index: number) => {
-      const target = index === activeVariant ? (activeVariant === -1 ? strokes : variants[activeVariant] ?? []) : variants[index] ?? [];
-      if (target.length === 0) {
-        setVariants((prev) => prev.filter((_, i) => i !== index));
-        if (activeVariant === index) setActiveVariant(-1);
-        return;
-      }
-      setVariantToDelete(index);
+  const switchVariant = useCallback(
+    (idx: number) => {
+      setActiveVariant(idx);
+      setCurrentStroke(null);
+      setQuality(null);
+      setShowQuality(false);
     },
-    [activeVariant, (activeVariant === -1 ? strokes : variants[activeVariant] ?? []), variants],
+    [],
   );
 
   const performVariantDelete = useCallback(() => {
     if (variantToDelete === null) return;
-    const index = variantToDelete;
-    setVariants((prev) => prev.filter((_, i) => i !== index));
-    if (activeVariant === index) setActiveVariant(-1);
-    else if (activeVariant > index) setActiveVariant(activeVariant - 1);
+    pushUndo();
+    setVariants((prev) => prev.filter((_, i) => i !== variantToDelete));
+    if (activeVariant === variantToDelete) {
+      setActiveVariant(-1);
+    } else if (activeVariant > variantToDelete) {
+      setActiveVariant(activeVariant - 1);
+    }
     setVariantToDelete(null);
-  }, [variantToDelete, activeVariant]);
+    setIsDirty(true);
+  }, [activeVariant, pushUndo, variantToDelete]);
 
-  const switchCharacter = useCallback(
-    (char: string) => {
-      if (char === character.char) return;
-      commit();
-      onSelectCharacter?.(char);
+  const performSave = useCallback(async () => {
+    try {
+      setIsSaving(true);
+      const data: CharacterData = {
+        ...character,
+        strokes,
+        variants,
+        lastUpdated: Date.now(),
+      } as CharacterData;
+      await onSave(data);
+      setIsDirty(false);
+      setLastSavedAt(Date.now());
+    } catch (err) {
+      console.error("Failed to save character:", err);
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [character, onSave, strokes, variants]);
+
+  const smartSaveAndNext = useCallback(async () => {
+    try {
+      await performSave();
+      onNext();
+    } catch (err) {
+      console.error("Save failed, not advancing:", err);
+    }
+  }, [onNext, performSave]);
+
+  const saveAndGo = useCallback(
+    async (fn: () => void) => {
+      try {
+        await performSave();
+        fn();
+      } catch (err) {
+        console.error("Save failed:", err);
+      }
     },
-    [character.char, commit, onSelectCharacter],
+    [performSave],
   );
 
-  // -------------------------------------------------------------- shortcuts
+  const runQualityCheck = useCallback(() => {
+    const analysis = analyzeQuality(activeStrokes);
+    setQuality(analysis);
+    setShowQuality(true);
+  }, [activeStrokes]);
+
+  const getCanvasPoint = useCallback(
+    (clientX: number, clientY: number): Point | null => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return null;
+      const rect = container.getBoundingClientRect();
+      const x = ((clientX - rect.left) / rect.width) * VIRTUAL_WIDTH;
+      const y = ((clientY - rect.top) / rect.height) * VIRTUAL_HEIGHT;
+      if (Number.isNaN(x) || Number.isNaN(y)) return null;
+      return { x, y };
+    },
+    [],
+  );
+
+  const startDrawing = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (isEraser) {
+        setIsDrawing(true);
+        setPointerId(e.pointerId);
+        const p = getCanvasPoint(e.clientX, e.clientY);
+        if (p) {
+          setLastPoint(p);
+          setLastPointerTime(e.timeStamp);
+          setPointerSamples([p]);
+          setEraserPos({ x: e.clientX, y: e.clientY });
+        }
+        e.preventDefault();
+        return;
+      }
+      pushUndo();
+      setIsDrawing(true);
+      setPointerId(e.pointerId);
+      const p = getCanvasPoint(e.clientX, e.clientY);
+      if (p) {
+        const pWithT: Point = { x: p.x, y: p.y };
+        setCurrentStroke([pWithT]);
+        setLastPoint(pWithT);
+        setLastPointerTime(e.timeStamp);
+        setPointerSamples([pWithT]);
+      }
+      e.preventDefault();
+    },
+    [getCanvasPoint, isEraser, pushUndo],
+  );
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const rect = container.getBoundingClientRect();
+    const cssW = rect.width || 1;
+    const cssH = rect.height || 1;
+    const scale = dpr;
+    if (canvas.width !== Math.floor(cssW * scale) || canvas.height !== Math.floor(cssH * scale)) {
+      canvas.width = Math.floor(cssW * scale);
+      canvas.height = Math.floor(cssH * scale);
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+    }
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.scale(w / VIRTUAL_WIDTH, h / VIRTUAL_HEIGHT);
+
+    if (canvasStyle !== "blank") {
+      ctx.save();
+      ctx.globalAlpha = 0.08;
+      ctx.strokeStyle = "#9CA3AF";
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([2, 4]);
+      const capY = VIRTUAL_HEIGHT * 0.24;
+      const upperY = VIRTUAL_HEIGHT * 0.36;
+      const baseY = VIRTUAL_HEIGHT * 0.64;
+      const descY = VIRTUAL_HEIGHT * 0.8;
+      if (canvasStyle === "typography" || canvasStyle === "notebook") {
+        ctx.beginPath();
+        ctx.moveTo(10, capY);
+        ctx.lineTo(VIRTUAL_WIDTH - 10, capY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(10, upperY);
+        ctx.lineTo(VIRTUAL_WIDTH - 10, upperY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(10, baseY);
+        ctx.lineTo(VIRTUAL_WIDTH - 10, baseY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(10, descY);
+        ctx.lineTo(VIRTUAL_WIDTH - 10, descY);
+        ctx.stroke();
+      }
+      if (canvasStyle === "notebook") {
+        ctx.globalAlpha = 0.05;
+        ctx.setLineDash([1, 6]);
+        for (let y = capY + 16; y < baseY; y += 16) {
+          ctx.beginPath();
+          ctx.moveTo(10, y);
+          ctx.lineTo(VIRTUAL_WIDTH - 10, y);
+          ctx.stroke();
+        }
+        for (let y = baseY + 16; y < descY + 20; y += 16) {
+          ctx.beginPath();
+          ctx.moveTo(10, y);
+          ctx.lineTo(VIRTUAL_WIDTH - 10, y);
+          ctx.stroke();
+        }
+      }
+      if (canvasStyle === "dots") {
+        ctx.globalAlpha = 0.05;
+        ctx.setLineDash([]);
+        const spacing = 14;
+        for (let x = 20; x < VIRTUAL_WIDTH - 20; x += spacing) {
+          for (let y = 20; y < VIRTUAL_HEIGHT - 20; y += spacing) {
+            ctx.beginPath();
+            ctx.arc(x, y, 0.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#9CA3AF";
+            ctx.fill();
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.globalAlpha = 0.035;
+    ctx.font = "bold 160px ui-serif, Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#0F172A";
+    ctx.fillText(character.char, VIRTUAL_WIDTH / 2, VIRTUAL_HEIGHT / 2);
+    ctx.restore();
+
+    const allStrokes = activeStrokes;
+    for (let i = 0; i < allStrokes.length; i++) {
+      const pts = allStrokes[i];
+      if (pts.length < 1) continue;
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = getBrushColor(brushType);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.globalAlpha = BrushConfig[brushType].opacity;
+      const baseWidth = 1.2 * SizeConfig[strokeSize] * BrushConfig[brushType].lineWidthMultiplier;
+      if (pts.length === 1) {
+        ctx.beginPath();
+        ctx.arc(pts[0].x, pts[0].y, baseWidth * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        for (let j = 0; j < pts.length; j++) {
+          const p = pts[j];
+          if (j === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.lineWidth = baseWidth;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    if (currentStroke && currentStroke.length > 0 && !isEraser) {
+      ctx.save();
+      ctx.strokeStyle = getBrushColor(brushType);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.globalAlpha = BrushConfig[brushType].opacity;
+      const baseWidth = 1.2 * SizeConfig[strokeSize] * BrushConfig[brushType].lineWidthMultiplier;
+      if (currentStroke.length === 1) {
+        ctx.beginPath();
+        ctx.arc(currentStroke[0].x, currentStroke[0].y, baseWidth * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        for (let j = 0; j < currentStroke.length; j++) {
+          const p = currentStroke[j];
+          if (j === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.lineWidth = baseWidth;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }, [activeStrokes, brushType, canvasStyle, character.char, currentStroke, dpr, isEraser, strokeSize]);
+
+  const eraseAt = useCallback(
+    (p: Point) => {
+      const radius = eraserSize / 2;
+      const next = activeStrokes
+        .map((pts) => {
+          const kept = pts.filter((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) > radius * 0.08);
+          if (kept.length === 0) return null;
+          if (kept.length === pts.length) return pts;
+          return kept;
+        })
+        .filter((s): s is Stroke => s !== null);
+      if (next.length !== activeStrokes.length) {
+        setActiveStrokes(next);
+      }
+    },
+    [activeStrokes, eraserSize, setActiveStrokes],
+  );
+
+  const moveDrawing = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (!isDrawing || (pointerId !== null && e.pointerId !== pointerId)) return;
+      const p = getCanvasPoint(e.clientX, e.clientY);
+      if (!p) return;
+      setEraserPos({ x: e.clientX, y: e.clientY });
+      const now = e.timeStamp;
+      const dt = now - lastPointerTime;
+      const dist = lastPoint ? Math.hypot(p.x - lastPoint.x, p.y - lastPoint.y) : 0;
+      const shouldAdd = lastPoint === null || dist >= MIN_POINT_SPACING || dt > 32;
+      if (shouldAdd) {
+        const pWithT: Point = { x: p.x, y: p.y };
+        setPointerSamples((prev) => [...prev.slice(-MAX_POINTER_SAMPLES), pWithT]);
+        if (isEraser) {
+          eraseAt(pWithT);
+          setLastPoint(pWithT);
+          setLastPointerTime(now);
+        } else {
+          setCurrentStroke((prev) => (prev ? [...prev, pWithT] : [pWithT]));
+          setLastPoint(pWithT);
+          setLastPointerTime(now);
+        }
+      }
+      e.preventDefault();
+    },
+    [eraseAt, getCanvasPoint, isDrawing, isEraser, lastPoint, lastPointerTime, pointerId],
+  );
+
+  const endDrawing = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (pointerId !== null && e.pointerId !== pointerId) return;
+      setIsDrawing(false);
+      setPointerId(null);
+      setEraserPos(null);
+      if (!isEraser && currentStroke && currentStroke.length > 0) {
+        const stroke: Stroke = currentStroke.map((p) => ({ x: p.x, y: p.y }));
+        setActiveStrokes([...activeStrokes, stroke as Stroke]);
+        setCurrentStroke(null);
+      }
+      setLastPoint(null);
+      setPointerSamples([]);
+      e.preventDefault();
+    },
+    [activeStrokes, currentStroke, isEraser, pointerId, setActiveStrokes],
+  );
+
+  const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pointerId !== null && e.pointerId !== pointerId) return;
+    setIsDrawing(false);
+    setPointerId(null);
+    setCurrentStroke(null);
+    setLastPoint(null);
+    setPointerSamples([]);
+    setEraserPos(null);
+    e.preventDefault();
+  }, [pointerId]);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.key.toLowerCase() === 'z') {
+    draw();
+  }, [draw]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let raf = 0;
+    const loop = () => {
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [draw]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      draw();
+      setDpr(window.devicePixelRatio || 1);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [draw]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === "z" && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+        } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
+          e.preventDefault();
+          redo();
+        } else if (e.key === "s") {
+          e.preventDefault();
+          performSave().catch(() => {});
+        }
+      }
+      if (e.key === "e") {
         e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-      } else if (meta && e.key.toLowerCase() === 'y') {
+        setToolMode((prev) => (prev === "eraser" ? "pen" : "eraser"));
+      }
+      if (e.key === "p") {
         e.preventDefault();
-        redo();
-      } else if (meta && e.key.toLowerCase() === 's') {
+        setToolMode("pen");
+      }
+      if (e.key === "c" && e.shiftKey) {
         e.preventDefault();
-        performSave();
-      } else if (e.key === 'Enter' || e.key === 'ArrowRight') {
+        clear();
+      }
+      if (e.key === "q") {
         e.preventDefault();
-        smartSaveAndNext();
-      } else if (e.key === 'ArrowLeft') {
+        runQualityCheck();
+      }
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
         e.preventDefault();
-        saveAndGo(() => onPrevious?.());
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === '1') {
-        setTool('pen');
-        setPenStyle('gel');
-      } else if (e.key === '2') {
-        setTool('pen');
-        setPenStyle('fountain');
-      } else if (e.key === '3') {
-        setTool('pen');
-        setPenStyle('marker');
-      } else if (e.key === '4') {
-        setTool('pen');
-        setPenStyle('pencil');
-      } else if (e.key.toLowerCase() === 'e') {
-        setTool('eraser');
+        setShowShortcuts((s) => !s);
+      }
+      if (e.key === "Escape") {
+        setShowShortcuts(false);
+        setVariantToDelete(null);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, performSave, smartSaveAndNext, saveAndGo, onPrevious, onClose]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [clear, performSave, redo, runQualityCheck, undo]);
 
-  const statusLabel =
-    saveState === 'saving'
-      ? 'Saving…'
-      : saveState === 'saved'
-      ? 'Saved'
-      : saveState === 'error'
-      ? "Couldn't save — your work is still here"
-      : online
-      ? 'Autosaved'
-      : 'Saved locally';
-
-  // The shortcut sheet floats over the panel so opening it never reflows or
-  // pushes the controls out of view.
   useEffect(() => {
-    if (!showShortcuts) return;
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('[data-shortcuts-panel]') || target.closest('[aria-label="Keyboard shortcuts"]')) return;
-      setShowShortcuts(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowShortcuts(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    let timeout: number | undefined;
+    if (isDirty) {
+      timeout = window.setTimeout(() => {
+        performSave().catch(() => {});
+      }, 2000);
+    }
     return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      if (timeout) window.clearTimeout(timeout);
     };
-  }, [showShortcuts]);
+  }, [isDirty, performSave]);
 
-  const renderStage = () => (
-<div
-       ref={stageRef}
-       className="flex min-h-0 flex-1 items-center justify-center px-3 py-3 sm:px-4 sm:py-4"
-     >
-      <div
-        data-testid="handwriting-stage"
-        className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm"
-        style={stageBox ? { width: stageBox, height: stageBox } : { width: '100%', aspectRatio: '1 / 1' }}
-      >
-        <canvas
-          data-testid="editor-canvas"
-          ref={canvasRef}
-          className={`block h-full w-full touch-none select-none ${
-            tool === 'eraser' ? (isHovering ? 'cursor-none' : 'cursor-default') : 'cursor-crosshair'
-          }`}
-          style={{ touchAction: 'none' }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={finishStroke}
-          onPointerCancel={finishStroke}
-          onPointerEnter={() => setIsHovering(true)}
-          onPointerLeave={() => {
-            setIsHovering(false);
-            setEraserCursor(null);
-          }}
-        />
-        {tool === 'eraser' && isHovering && eraserCursor && stageBox ? (
-          <div
-            aria-hidden="true"
-            data-testid="eraser-ring"
-            className="pointer-events-none absolute rounded-full border-2 border-neutral-900 bg-neutral-900/10"
-            style={{
-              left: eraserCursor.x,
-              top: eraserCursor.y,
-              width: (eraserRadius / VIRTUAL_WIDTH) * stageBox * 2,
-              height: (eraserRadius / VIRTUAL_HEIGHT) * stageBox * 2,
-              transform: 'translate(-50%, -50%)',
+  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const isCompleted = (character as any)?.completed === true || (character.strokes?.length ?? 0) > 0;
+  const category = character.category || "uppercase";
+  const proj: any = project || {};
+  const charsObj = proj?.characters;
+  const allChars: CharacterData[] = Array.isArray(charsObj)
+    ? charsObj
+    : typeof charsObj === "object" && charsObj !== null
+      ? Object.values(charsObj)
+      : [];
+
+  const categoryGroups = useMemo(() => {
+    const upper = allChars.filter((c: any) => (c.category || "uppercase") === "uppercase");
+    const lower = allChars.filter((c: any) => c.category === "lowercase");
+    const nums = allChars.filter((c: any) => c.category === "numbers");
+    const symbols = allChars.filter((c: any) => c.category === "symbols");
+    return { upper, lower, nums, symbols };
+  }, [allChars]);
+
+  const getCategoryProgress = (group: CharacterData[]) => {
+    const done = group.filter((c: any) => (c as any)?.completed || (c.strokes?.length ?? 0) > 0).length;
+    return { done, total: group.length };
+  };
+
+  const alpha = Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+  const alphaLower = Array.from("abcdefghijklmnopqrstuvwxyz");
+  const digits = Array.from("0123456789");
+  const symbolsList = ["!", "@", "#", "$", "%", "&", "*", "(", ")", "-", "_", "+", "=", "{", "}", "[", "]", "|", "\\", "/", "?", "<", ">", ",", ".", ";", ":", "'", '"'];
+
+  const renderCharGrid = (list: string[]) => (
+    <div className="grid grid-cols-6 gap-1.5 px-3 pb-2">
+      {list.map((ch) => {
+        const charData = allChars.find((c: any) => c.char === ch);
+        const completed = (charData as any)?.completed || (charData?.strokes?.length ?? 0) > 0;
+        const isCurrent = character.char === ch;
+        return (
+          <button
+            key={ch}
+            type="button"
+            onClick={() => {
+              saveAndGo(() => {
+                if (onSelectCharacter) {
+                  onSelectCharacter(ch);
+                } else {
+                  window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
+                }
+              });
             }}
-          />
-        ) : null}
-        {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0 && activeStrokeRef.current.length === 0 ? (
-          <>
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 flex items-center justify-center select-none font-serif text-[clamp(160px,30vw,320px)] leading-none text-neutral-900/5"
-            >
-              {character.char}
-            </div>
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 bottom-4 text-center font-mono text-[9px] uppercase tracking-[0.3em] text-neutral-300"
-            >
-              WRITE NATURALLY
-            </div>
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute right-3 top-3 select-none rounded-xl bg-amber-50 px-2.5 py-1.5 text-[9px] leading-tight text-amber-900 shadow-sm ring-1 ring-amber-200 sm:text-[10px]"
-            >
-              Don't worry
-              <br />
-              about perfection!
-              <br />
-              Just be you.
-            </div>
-          </>
-        ) : null}
-      </div>
+            className={`relative flex h-8 w-8 items-center justify-center rounded-lg border text-sm font-medium transition-all ${
+              isCurrent
+                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                : completed
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300"
+                  : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50"
+            }`}
+          >
+            {ch}
+            {completed && !isCurrent ? (
+              <Check className="absolute -right-0.5 -top-0.5 h-3 w-3 text-emerald-600" />
+            ) : null}
+          </button>
+        );
+      })}
     </div>
   );
 
   return (
     <div
-      data-testid="handwriting-editor"
-      className="fixed inset-0 z-[70] flex h-dvh w-full flex-col overflow-hidden bg-[#FFFDF7] text-neutral-900"
+      ref={stageRef}
+      className="fixed inset-0 z-50 flex h-screen min-h-0 w-screen flex-col bg-[#FAFAF7] overflow-hidden"
+      data-testid="handwriting-canvas"
     >
-      <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
-{/* ------------------------------------------------- TOP HEADER */}
-        <header className="shrink-0 flex items-center justify-between gap-4 border-b border-neutral-200/50 bg-white/80 backdrop-blur-sm px-4 py-3 lg:px-6 lg:py-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xl font-bold font-sans text-neutral-900 tracking-tight">Type</span>
-              <span className="text-xl font-bold font-handwriting italic text-neutral-900 -ml-0.5">Me</span>
+      {/* Decorative blurred accents - subtle */}
+      <div aria-hidden="true" className="pointer-events-none absolute -left-24 top-10 h-40 w-40 rounded-full bg-sky-200/20 blur-3xl" />
+      <div aria-hidden="true" className="pointer-events-none absolute -right-20 top-32 h-40 w-40 rounded-full bg-purple-200/20 blur-3xl" />
+      <div aria-hidden="true" className="pointer-events-none absolute bottom-20 left-1/3 h-32 w-32 rounded-full bg-amber-100/30 blur-3xl" />
+
+      {/* Top Application Bar */}
+      <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-[#E8E8E3] bg-white/95 px-4 shadow-sm backdrop-blur sm:h-16 md:h-[68px] lg:h-[72px]">
+        {/* Left */}
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white shadow-sm">
+              <span className="text-xs font-bold">T</span>
             </div>
-            <div className="hidden sm:block">
-              <div className="flex items-center gap-1 text-xs text-neutral-500">
-                <span className="font-medium text-neutral-700">My Handwriting</span>
-                <span className="text-neutral-300">·</span>
-                <span className="font-mono tabular-nums">{done} / {total} written</span>
-              </div>
-              <div className="w-32 h-1.5 rounded-full bg-neutral-100 overflow-hidden mt-0.5">
-                <div className="h-full bg-neutral-900 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
-              </div>
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-semibold tracking-tight text-neutral-900 sm:text-base">TypeMe</span>
+              <span className="hidden text-sm font-medium text-neutral-500 sm:inline">•</span>
+              <span className="hidden truncate text-sm font-medium text-neutral-700 sm:inline">{projectName}</span>
+              <Edit2 className="ml-1 h-3.5 w-3.5 text-neutral-400" />
             </div>
           </div>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-neutral-600">
-              <Cloud className="h-3.5 w-3.5" />
-              Autosaved
+          <div className="hidden items-center gap-2.5 rounded-full border border-[#E8E8E3] bg-neutral-50 px-3 py-1.5 lg:flex">
+            <span className="text-xs font-medium text-neutral-600">
+              {completedCount} / {totalCount} written
+            </span>
+            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-neutral-200">
+              <div className="h-full rounded-full bg-neutral-900 transition-all" style={{ width: `${progressPct}%` }} />
             </div>
+          </div>
+        </div>
+
+        {/* Center */}
+        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1">
+          <div className="flex items-center gap-2 rounded-full border border-[#E8E8E3] bg-white px-2.5 py-1 shadow-sm">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900 font-serif text-base font-semibold text-white">
+              {character.char}
+            </span>
+            <span className="text-[10px] uppercase tracking-[0.22em] text-neutral-400">Current</span>
+          </div>
+        </div>
+
+        {/* Right */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 sm:flex">
+            <span>Autosaved</span>
+            <Check className="h-3.5 w-3.5" />
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((f) => !f)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E3] bg-white text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900"
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
+          {onClose ? (
             <button
               type="button"
-              onClick={() => onClose()}
-              className="p-2 rounded-lg border border-neutral-200 text-neutral-500 hover:border-neutral-900 hover:text-neutral-900 transition-colors"
-              aria-label="Close editor"
+              onClick={onClose}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E3] bg-white text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900"
             >
               <X className="h-4 w-4" />
             </button>
+          ) : null}
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 shadow-sm">
+            <Crown className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Pro Plan</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main workspace */}
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-2 sm:gap-4 sm:p-3 lg:p-4">
+        {/* Top row: sidebar + canvas + tools */}
+        <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-3 lg:flex-row lg:items-stretch lg:justify-center lg:px-2">
+          {/* Left Sidebar */}
+          <aside className="hidden w-full shrink-0 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm md:flex lg:h-full lg:w-[240px] xl:w-[260px]">
+            {/* Categories */}
+            <div className="flex flex-col gap-2 p-3">
+              {(
+                [
+                  { key: "upper", name: "A–Z", count: getCategoryProgress(categoryGroups.upper), bg: "bg-sky-50", border: category === "uppercase" ? "border-sky-500 ring-1 ring-sky-200" : "border-sky-100" },
+                  { key: "lower", name: "a–z", count: getCategoryProgress(categoryGroups.lower), bg: "bg-violet-50", border: category === "lowercase" ? "border-violet-500 ring-1 ring-violet-200" : "border-violet-100" },
+                  { key: "nums", name: "0–9", count: getCategoryProgress(categoryGroups.nums), bg: "bg-amber-50", border: category === "numbers" ? "border-amber-500 ring-1 ring-amber-200" : "border-amber-100" },
+                  { key: "symbols", name: "Symbols", count: getCategoryProgress(categoryGroups.symbols), bg: "bg-pink-50", border: category === "symbols" ? "border-pink-500 ring-1 ring-pink-200" : "border-pink-100" },
+                ] as const
+              ).map((cat) => (
+                <button
+                  key={cat.key}
+                  type="button"
+                  className={`group flex items-center justify-between rounded-xl border p-2.5 text-left transition-all hover:shadow-sm ${cat.bg} ${cat.border}`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-sm font-semibold text-neutral-800 shadow-sm">
+                      {cat.key === "upper" ? "A" : cat.key === "lower" ? "a" : cat.key === "nums" ? "0" : "#"}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-neutral-900">{cat.name}</span>
+                      <span className="text-[10px] text-neutral-500">
+                        {cat.count.done} / {cat.count.total}
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-neutral-400 transition-transform group-hover:translate-x-0.5" />
+                </button>
+              ))}
+            </div>
+
+            {/* Grid */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[#E8E8E3]">
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Characters</span>
+                <span className="text-[10px] text-neutral-400">{completedCount}/{totalCount}</span>
+              </div>
+              <div className="min-h-0 overflow-y-auto">
+                {renderCharGrid(alpha)}
+                {renderCharGrid(alphaLower)}
+                {renderCharGrid(digits)}
+                {renderCharGrid(symbolsList.slice(0, 24))}
+              </div>
+            </div>
+
+            {/* Bottom motivational */}
+            <div className="border-t border-[#E8E8E3] p-3">
+              <div className="relative flex flex-col items-start gap-1 rounded-xl border border-amber-200 bg-amber-50/90 p-3 shadow-sm">
+                <p className="font-serif text-sm leading-snug text-amber-950">
+                  Write each letter
+                  <br />
+                  with care.
+                </p>
+                <span aria-hidden="true" className="text-sm text-rose-400">♥</span>
+                <ArrowRight className="absolute bottom-2 right-2 h-4 w-4 text-amber-700" />
+              </div>
+            </div>
+          </aside>
+
+          {/* Center Canvas */}
+          <main className="flex min-h-0 flex-1 flex-col items-center justify-center">
+            <div className="flex w-full max-w-full flex-1 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[1100px] xl:max-w-[1180px] 2xl:max-w-[1280px]">
+              {/* Canvas header */}
+              <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900 shadow-sm sm:h-12 sm:w-12 sm:text-3xl">
+                    {character.char}
+                  </span>
+                  <div className="flex flex-col items-center">
+                    <p className="text-[9px] uppercase tracking-[0.28em] text-neutral-400 sm:text-[10px]">
+                      Stay between the cap line and the baseline
+                    </p>
+                    {isCompleted ? (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-800">
+                        <Check className="h-3 w-3" /> Completed
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              {/* Canvas card */}
+              <div className="relative flex min-h-0 flex-1 flex-col p-2 sm:p-3 lg:p-4">
+                {variantToDelete !== null ? (
+                  <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 shadow-sm">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    <span>Delete alternate {variantToDelete + 1}?</span>
+                    <button type="button" onClick={() => setVariantToDelete(null)} className="rounded-full border border-rose-200 bg-white px-2 py-0.5 font-medium">Cancel</button>
+                    <button type="button" onClick={performVariantDelete} className="rounded-full bg-rose-700 px-2 py-0.5 font-medium text-white">Delete</button>
+                  </div>
+                ) : null}
+
+                {/* Top-right creative note */}
+                <div className="pointer-events-none absolute right-4 top-4 z-10 hidden rounded-2xl border border-amber-200 bg-amber-50/95 p-2.5 shadow-sm sm:block">
+                  <p className="font-serif text-xs leading-snug text-amber-950">
+                    Don't worry
+                    <br />
+                    about perfection!
+                    <br />
+                    Just be you.
+                  </p>
+                  <ArrowRight className="absolute -bottom-1 -right-1 h-4 w-4 rotate-45 text-amber-700" />
+                </div>
+
+                {/* Canvas stage */}
+                <div
+                  ref={containerRef}
+                  className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-2 sm:p-4"
+                >
+                  {isEraser && eraserPos ? (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none fixed z-30 rounded-full border-2 border-neutral-400 bg-neutral-200/40 backdrop-blur-sm"
+                      style={{
+                        left: eraserPos.x - eraserSize / 2,
+                        top: eraserPos.y - eraserSize / 2,
+                        width: eraserSize,
+                        height: eraserSize,
+                      }}
+                    />
+                  ) : null}
+                  <canvas
+                    ref={canvasRef}
+                    onPointerDown={startDrawing}
+                    onPointerMove={moveDrawing}
+                    onPointerUp={endDrawing}
+                    onPointerCancel={handlePointerCancel}
+                    onPointerLeave={handlePointerCancel}
+                    className="h-full w-full touch-none cursor-crosshair"
+                    style={{ touchAction: "none" }}
+                  />
+                  {/* Bottom canvas message */}
+                  <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
+                    <span className="text-[9px] uppercase tracking-[0.32em] text-neutral-300 sm:text-[10px]">WRITE NATURALLY</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+
+          {/* Right Tool Panel */}
+          <aside className="flex w-full shrink-0 flex-col gap-2 sm:gap-3 lg:h-full lg:w-[220px] xl:w-[240px]">
+            <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm">
+              {/* Pen/Eraser */}
+              <div className="flex flex-col gap-2 p-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Tool</span>
+                <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-[#E8E8E3] bg-neutral-50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setToolMode("pen")}
+                    className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                      toolMode === "pen" ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-700 hover:bg-white"
+                    }`}
+                  >
+                    <PenTool className="h-3.5 w-3.5" /> Pen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setToolMode("eraser")}
+                    className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                      toolMode === "eraser" ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-700 hover:bg-white"
+                    }`}
+                  >
+                    <Eraser className="h-3.5 w-3.5" /> Eraser
+                  </button>
+                </div>
+                {toolMode === "eraser" ? (
+                  <div className="flex flex-col gap-1.5 rounded-xl border border-[#E8E8E3] bg-neutral-50 p-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-neutral-500">Eraser Size</span>
+                      <span className="text-[10px] font-medium text-neutral-700">{eraserSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={6}
+                      max={80}
+                      step={1}
+                      value={eraserSize}
+                      onChange={(e) => setEraserSize(Number(e.target.value))}
+                      className="h-1 w-full accent-neutral-900"
+                    />
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Brush */}
+              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Brush</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(["gel", "fountain", "marker", "pencil"] as BrushType[]).map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => setBrushType(b)}
+                      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs transition-colors ${
+                        brushType === b ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+                      }`}
+                    >
+                      <span className="capitalize">{b}</span>
+                      <div className="flex w-full items-center justify-center">
+                        {b === "gel" && <div className="h-0.5 w-14 rounded-full bg-current" />}
+                        {b === "fountain" && <div className="h-0.5 w-14 rounded-full border-t-2 border-dashed border-current opacity-80" />}
+                        {b === "marker" && <div className="h-1 w-14 rounded-sm bg-current" />}
+                        {b === "pencil" && <div className="h-0.5 w-14 bg-current opacity-70" style={{ backgroundImage: "repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 4px)" }} />}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Stroke Size */}
+              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Stroke Size</span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(["fine", "regular", "bold"] as StrokeSize[]).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setStrokeSize(s)}
+                      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs capitalize transition-colors ${
+                        strokeSize === s ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+                      }`}
+                    >
+                      {s}
+                      <div className="flex h-3 w-full items-center justify-center">
+                        {s === "fine" && <span className="text-lg leading-none">·</span>}
+                        {s === "regular" && <div className="h-0.5 w-8 rounded-full bg-current" />}
+                        {s === "bold" && <div className="h-1.5 w-8 rounded-full bg-current" />}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Canvas Style */}
+              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Canvas Style</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(["typography", "notebook", "dots", "blank"] as CanvasStyle[]).map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={() => setCanvasStyle(style)}
+                      className={`flex items-center justify-center rounded-lg border px-2 py-1.5 text-xs capitalize transition-colors ${
+                        canvasStyle === style ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+                      }`}
+                    >
+                      {style}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Variant */}
+              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Variant</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => switchVariant(-1)}
+                    className={`inline-flex h-7 min-w-[28px] items-center justify-center rounded-lg border px-2 text-xs font-medium ${
+                      activeVariant === -1 ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white hover:border-neutral-300"
+                    }`}
+                  >
+                    Main
+                  </button>
+                  {variants.map((_, i) => (
+                    <div key={i} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => switchVariant(i)}
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-xs font-medium ${
+                          activeVariant === i ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white hover:border-neutral-300"
+                        }`}
+                      >
+                        {i + 1}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVariantToDelete(i)}
+                        className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-[9px] text-rose-700"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addVariant}
+                    className="inline-flex h-7 items-center justify-center rounded-lg border border-dashed border-[#E8E8E3] bg-white px-2 text-xs font-medium text-neutral-600 hover:border-neutral-300"
+                  >
+                    + Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Bottom decoration */}
+              <div className="mt-auto border-t border-[#E8E8E3] p-3">
+                <div className="relative flex flex-col items-start rounded-xl border border-violet-200 bg-violet-50/90 p-3">
+                  <p className="font-serif text-sm leading-snug text-violet-950">Make it yours.</p>
+                  <Sparkles className="absolute bottom-2 right-2 h-4 w-4 text-violet-700" />
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        {/* Bottom Character Strip */}
+        <div className="hidden shrink-0 flex-col gap-2 rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm md:flex md:p-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">All Characters</span>
+            <span className="text-[10px] text-neutral-400">{completedCount} / {totalCount}</span>
+          </div>
+          <div className="flex max-w-full flex-wrap items-center justify-center gap-0.5 overflow-x-auto md:gap-1">
+            {alpha.map((ch) => {
+              const cd = allChars.find((c) => c.char === ch);
+              const done = (cd as any)?.completed || (cd?.strokes?.length ?? 0) > 0;
+              const cur = character.char === ch;
+              return (
+                <button
+                  key={ch}
+                  type="button"
+                  onClick={() => {
+                    saveAndGo(() => {
+                      if (onSelectCharacter) {
+                        onSelectCharacter(ch);
+                      } else {
+                        window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
+                      }
+                    });
+                  }}
+                  className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-[11px] font-medium transition-all md:h-7 md:w-7 md:rounded-lg md:text-xs lg:h-8 lg:w-8 ${
+                    cur ? "border-blue-600 bg-blue-600 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+                  }`}
+                >
+                  {ch}
+                  {done && !cur ? <Check className="absolute -right-0.5 -top-0.5 h-2 w-2 text-emerald-600 md:h-3 md:w-3" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Bottom Action Bar */}
+        <div className="flex shrink-0 flex-col gap-2 rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-3 sm:py-2.5">
+          <div className="flex items-center justify-center gap-1.5 sm:justify-start">
             <button
               type="button"
-              className="px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-amber-100 hover:bg-amber-200 rounded-full transition-colors flex items-center gap-1"
+              onClick={undo}
+              disabled={undoStack.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Crown className="h-3 w-3" />
-              Pro Plan
+              <RotateCcw className="h-3.5 w-3.5" /> Undo
+            </button>
+            <button
+              type="button"
+              onClick={redo}
+              disabled={redoStack.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <RotateCw className="h-3.5 w-3.5" /> Redo
+            </button>
+            <button
+              type="button"
+              onClick={clear}
+              disabled={activeStrokes.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Clear
+            </button>
+            <button
+              type="button"
+              onClick={runQualityCheck}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Quality
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowShortcuts((s) => !s)}
+              className="hidden items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 sm:inline-flex"
+            >
+              Shortcuts
             </button>
           </div>
-        </header>
-        {/* ------------------------------------------------- LEFT: controls */}
-        <aside className="relative flex max-h-[56dvh] w-full shrink-0 flex-col overflow-hidden border-b border-neutral-200 bg-white lg:max-h-none lg:h-full lg:w-[clamp(260px,22vw,320px)] lg:border-b-0 lg:border-r">
-          <div className="flex-1 flex flex-col overflow-y-auto p-3 lg:p-4">
-            {/* Category Cards */}
-            <div className="space-y-2">
-              {CATEGORY_TABS.map((tab, i) => {
-                const isActive = activeTab === tab.key;
-                const filteredChars = tabChars.filter((c) => c.category === tab.key);
-                const completed = filteredChars.filter((c) => c.hasStrokes).length;
-                const total = filteredChars.length;
-                const colors: Record<string, string> = {
-                  uppercase: 'bg-blue-50 border-blue-100',
-                  lowercase: 'bg-purple-50 border-purple-100',
-                  numbers: 'bg-orange-50 border-orange-100',
-                  symbols: 'bg-pink-50 border-pink-100',
-                };
-                const activeColors: Record<string, string> = {
-                  uppercase: 'bg-blue-100 border-blue-300',
-                  lowercase: 'bg-purple-100 border-purple-300',
-                  numbers: 'bg-orange-100 border-orange-300',
-                  symbols: 'bg-pink-100 border-pink-300',
-                };
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    aria-pressed={isActive}
-                    className={`w-full flex items-center justify-between gap-2 p-3 rounded-2xl border transition-all duration-200 ${isActive ? activeColors[tab.key] : colors[tab.key]} hover:shadow-sm`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-lg ${isActive ? 'bg-white shadow-sm' : 'bg-white/50'}`}>
-                        {tab.key === 'uppercase' && <span className="text-blue-700">Aᶻ</span>}
-                        {tab.key === 'lowercase' && <span className="text-purple-700">a</span>}
-                        {tab.key === 'numbers' && <span className="text-orange-700">123</span>}
-                        {tab.key === 'symbols' && <span className="text-pink-700">&</span>}
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm text-neutral-900">{tab.label}</p>
-                        <p className="font-mono text-[10px] text-neutral-500">{completed}/{total}</p>
-                      </div>
-                    </div>
-                    <ChevronRight className={`h-4 w-4 text-neutral-400 transition-transform ${isActive ? 'rotate-90' : ''}`} />
-                  </button>
-                );
-              })}
-            </div>
 
-            {/* Motivational Note */}
-            <div className="mt-auto flex flex-col items-center gap-2 border-t border-neutral-100 pt-4 text-center">
-              <p className="font-handwriting text-base leading-tight text-neutral-800">
-                Write
-                <br />
-                each letter
-                <br />
-                with care
-              </p>
-              <span aria-hidden="true" className="text-sm text-rose-400">♥</span>
-            </div>
-          </div>
-        </aside>
-        {/* ------------------------------------------------- RIGHT: editor */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-neutral-50">
-          <div className="flex shrink-0 items-center justify-center border-b border-neutral-200 bg-white px-3 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <span
-                data-testid="editor-current-char"
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 font-serif text-xl font-semibold leading-none text-neutral-900 shadow-sm"
+          <div className="flex items-center justify-center gap-1.5 sm:justify-end">
+            {hasPrevious && onPrevious ? (
+              <button
+                type="button"
+                onClick={() => saveAndGo(() => onPrevious())}
+                className="inline-flex items-center gap-1 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300"
               >
-                {character.char}
-              </span>
-              <div className="flex flex-col items-center justify-center gap-1">
-                {milestone ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                    <Sparkles className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{milestone}</span>
-                  </span>
-                ) : null}
-                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">
-                  Stay between the cap line and the baseline
-                </p>
-              </div>
-            </div>
+                <ChevronLeft className="h-3.5 w-3.5" /> Prev
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={performSave}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-3.5 py-1.5 text-xs font-semibold text-neutral-900 transition-colors hover:bg-neutral-50"
+            >
+              <Check className="h-3.5 w-3.5" /> Save
+            </button>
+            <button
+              type="button"
+              onClick={smartSaveAndNext}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-800"
+            >
+              Save & Next <ChevronRight className="h-3.5 w-3.5" />
+            </button>
           </div>
-
-          {variantToDelete !== null ? (
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-rose-200 bg-rose-50 px-4 py-2 text-[11px] text-rose-800">
-              <span className="flex items-center gap-2">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                Delete alternate {variantToDelete + 1}? Its strokes will be removed.
-              </span>
-              <span className="flex shrink-0 items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setVariantToDelete(null)}
-                  className="cursor-pointer rounded-md border border-rose-200 bg-white px-2 py-1 font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={performVariantDelete}
-                  className="cursor-pointer rounded-md bg-rose-700 px-2 py-1 font-medium text-white transition-colors hover:bg-rose-800"
-                >
-                  Delete
-                </button>
-              </span>
-            </div>
-          ) : null}
-
-          {renderStage()}
-
-          {/* sticky action bar */}
-          <div className="shrink-0 border-t border-neutral-200 bg-white px-3 py-2.5 sm:px-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={undo}
-                  disabled={undoStack.length === 0}
-                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-2 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-400 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Undo
-                </button>
-                <button
-                  type="button"
-                  onClick={redo}
-                  disabled={redoStack.length === 0}
-                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-2 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-400 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900"
-                >
-                  <RotateCw className="h-3.5 w-3.5" />
-                  Redo
-                </button>
-                <button
-                  type="button"
-                  onClick={clear}
-                  disabled={(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0}
-                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-2 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Clear
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                {hasPrevious && onPrevious ? (
-                  <button
-                    type="button"
-                    onClick={() => saveAndGo(() => onPrevious())}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-2 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-400 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Prev</span>
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={performSave}
-                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-3.5 py-2 text-xs font-semibold text-neutral-900 transition-colors hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={smartSaveAndNext}
-                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-neutral-900 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-                >
-                  Save &amp; Next
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </main>
+        </div>
       </div>
+
+      {showQuality && quality ? (
+        <div className="absolute bottom-4 left-1/2 z-20 w-[min(92vw,320px)] -translate-x-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-neutral-900">Quality: {quality.status}</span>
+            <button type="button" onClick={() => setShowQuality(false)} className="text-neutral-400 hover:text-neutral-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-neutral-600">{quality.feedback}</p>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-neutral-500">
+            <span>Points: {quality.pointCount}</span>
+            <span>Strokes: {quality.strokeCount}</span>
+            <span>Bounds: {Math.round(quality.bounds.width)}×{Math.round(quality.bounds.height)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {showShortcuts ? (
+        <div className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-neutral-900">Shortcuts</span>
+            <button type="button" onClick={() => setShowShortcuts(false)} className="text-neutral-400 hover:text-neutral-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-neutral-600">
+            <span>Ctrl+Z Undo</span>
+            <span>Ctrl+Shift+Z/⌘+Y Redo</span>
+            <span>Ctrl+S Save</span>
+            <span>E Toggle Eraser</span>
+            <span>P Pen</span>
+            <span>Shift+C Clear</span>
+            <span>Q Quality</span>
+            <span>? Shortcuts</span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

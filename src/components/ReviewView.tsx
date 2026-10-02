@@ -258,8 +258,8 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
       {editingChar && (
         <HandwritingCanvas
           character={editingChar}
-          onSave={(char, strokes, variants) => {
-            onUpdateCharacter(char, strokes, variants);
+          onSave={async (data: any) => {
+            onUpdateCharacter(data.char, data.strokes, data.variants);
           }}
           onClose={() => setEditingChar(null)}
           onNext={handleNextChar}

@@ -347,8 +347,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       {editingChar && (
         <HandwritingCanvas
           character={editingChar}
-          onSave={(char, strokes, variants) => {
-            onUpdateCharacter(char, strokes, variants);
+          onSave={async (data: CharacterData) => {
+            onUpdateCharacter(data.char, data.strokes, data.variants);
           }}
           onClose={() => setEditingChar(null)}
           onNext={handleNextChar}
