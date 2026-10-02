@@ -24,6 +24,7 @@ import {
   Cloud,
   CloudOff,
   SlidersHorizontal,
+  Crown,
 } from 'lucide-react';
 
 export type PenStyle = 'gel' | 'fountain' | 'marker' | 'pencil';
@@ -896,409 +897,108 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   return (
     <div
       data-testid="handwriting-editor"
-      className="fixed inset-0 z-[70] flex h-dvh w-full flex-col overflow-hidden bg-neutral-50 text-neutral-900"
+      className="fixed inset-0 z-[70] flex h-dvh w-full flex-col overflow-hidden bg-[#FFFDF7] text-neutral-900"
     >
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-{/* ------------------------------------------------- LEFT: controls */}
-        <aside className="relative flex max-h-[56dvh] w-full shrink-0 flex-col overflow-hidden border-b border-neutral-200 bg-white lg:max-h-none lg:h-full lg:w-[clamp(296px,25vw,352px)] lg:border-b-0 lg:border-r">
-          <header className="shrink-0 border-b border-neutral-100 px-3 pb-2 pt-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <p className="truncate font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-400">
-                  {projectName}
-                </p>
-                <p className="mt-0.5 flex items-baseline gap-1.5">
-                  <span className="font-serif text-base font-semibold leading-none text-neutral-900">
-                    {done}
-                  </span>
-                  <span className="font-mono text-[10px] text-neutral-400">
-                    / {total} written
-                  </span>
-                </p>
+      <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
+{/* ------------------------------------------------- TOP HEADER */}
+        <header className="shrink-0 flex items-center justify-between gap-4 border-b border-neutral-200/50 bg-white/80 backdrop-blur-sm px-4 py-3 lg:px-6 lg:py-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xl font-bold font-sans text-neutral-900 tracking-tight">Type</span>
+              <span className="text-xl font-bold font-handwriting italic text-neutral-900 -ml-0.5">Me</span>
+            </div>
+            <div className="hidden sm:block">
+              <div className="flex items-center gap-1 text-xs text-neutral-500">
+                <span className="font-medium text-neutral-700">My Handwriting</span>
+                <span className="text-neutral-300">·</span>
+                <span className="font-mono tabular-nums">{done} / {total} written</span>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPanelOpen((v) => !v)}
-                  title={panelOpen ? 'Hide controls' : 'Show controls'}
-                  aria-label={panelOpen ? 'Hide controls' : 'Show controls'}
-                  aria-expanded={panelOpen}
-                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 lg:hidden"
-                >
-                  <SlidersHorizontal
-                    className={`h-3.5 w-3.5 transition-transform duration-200 ${panelOpen ? '' : 'rotate-90'}`}
-                  />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowShortcuts((s) => !s)}
-                  title="Keyboard shortcuts"
-                  aria-label="Keyboard shortcuts"
-                  aria-expanded={showShortcuts}
-                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-                >
-                  <Keyboard className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsExpanded((s) => !s)}
-                  title={isExpanded ? 'Restore layout' : 'Focus canvas'}
-                  aria-label={isExpanded ? 'Restore layout' : 'Focus canvas'}
-                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-                >
-                  {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onClose()}
-                  title="Save and close"
-                  aria-label="Save and close"
-                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+              <div className="w-32 h-1.5 rounded-full bg-neutral-100 overflow-hidden mt-0.5">
+                <div className="h-full bg-neutral-900 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
               </div>
             </div>
-
-            <div className="mt-2 flex items-center gap-2">
-              <div
-                className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"
-                role="progressbar"
-                aria-valuenow={progressPercent}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Font completion"
-              >
-                <div
-                  className="h-full rounded-full bg-blue-500 transition-[width] duration-500 ease-out"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-              <span
-                aria-live="polite"
-                title={statusLabel}
-                aria-label={statusLabel}
-                className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none transition-colors ${
-                  saveState === 'error'
-                    ? 'border-rose-200 bg-rose-50 text-rose-700'
-                    : saveState === 'saving'
-                    ? 'border-neutral-200 bg-neutral-100 text-neutral-500'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                }`}
-              >
-                {saveState === 'saving' ? (
-                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                ) : saveState === 'error' ? (
-                  <AlertCircle className="h-2.5 w-2.5" />
-                ) : online ? (
-                  <Cloud className="h-2.5 w-2.5" />
-                ) : (
-                  <CloudOff className="h-2.5 w-2.5" />
-                )}
-                {saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved' : online ? 'Autosaved' : 'Local'}
-              </span>
-            </div>
-          </header>
-
-          {/* Shortcut sheet: floats, never reflows the panel */}
-          <div
-            data-shortcuts-panel
-            data-testid="editor-shortcuts"
-            role="dialog"
-            aria-label="Keyboard shortcuts"
-            className={`absolute right-2 top-[3.4rem] z-30 w-[15.5rem] origin-top-right rounded-xl border border-neutral-200 bg-white p-2.5 shadow-lg transition-all duration-200 ease-out ${
-              showShortcuts
-                ? 'pointer-events-auto translate-y-0 scale-100 opacity-100'
-                : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0'
-            }`}
-          >
-            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-400">Shortcuts</p>
-            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1 text-[10px] text-neutral-600">
-              {[
-                ['Enter', 'save & next'],
-                ['\u2190', 'previous'],
-                ['Ctrl+Z', 'undo'],
-                ['Ctrl+Y', 'redo'],
-                ['1\u20134', 'pens'],
-                ['E', 'eraser'],
-                ['Esc', 'close'],
-              ].map(([key, label]) => (
-                <React.Fragment key={key}>
-                  <dt>
-                    <kbd className="rounded border border-neutral-200 bg-neutral-50 px-1 py-px font-mono text-[9px] text-neutral-800">
-                      {key}
-                    </kbd>
-                  </dt>
-                  <dd className="self-center">{label}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
           </div>
 
-          <div
-            className={`flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3 pt-2.5 ${
-              panelOpen ? '' : 'hidden lg:flex'
-            }`}
-          >
-            {/* mobile section switch — keeps every control reachable without scrolling */}
-            <div className="mb-2 flex shrink-0 gap-1 rounded-lg bg-neutral-100 p-0.5 lg:hidden">
-              {(['chars', 'tools'] as const).map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setPanelTab(key)}
-                  aria-pressed={panelTab === key}
-                  className={`flex-1 cursor-pointer rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                    panelTab === key ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-900'
-                  }`}
-                >
-                  {key === 'chars' ? 'Characters' : 'Tools'}
-                </button>
-              ))}
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-neutral-600">
+              <Cloud className="h-3.5 w-3.5" />
+              Autosaved
+            </div>
+            <button
+              type="button"
+              onClick={() => onClose()}
+              className="p-2 rounded-lg border border-neutral-200 text-neutral-500 hover:border-neutral-900 hover:text-neutral-900 transition-colors"
+              aria-label="Close editor"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className="px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-amber-100 hover:bg-amber-200 rounded-full transition-colors flex items-center gap-1"
+            >
+              <Crown className="h-3 w-3" />
+              Pro Plan
+            </button>
+          </div>
+        </header>
+        {/* ------------------------------------------------- LEFT: controls */}
+        <aside className="relative flex max-h-[56dvh] w-full shrink-0 flex-col overflow-hidden border-b border-neutral-200 bg-white lg:max-h-none lg:h-full lg:w-[clamp(260px,22vw,320px)] lg:border-b-0 lg:border-r">
+          <div className="flex-1 flex flex-col overflow-y-auto p-3 lg:p-4">
+            {/* Category Cards */}
+            <div className="space-y-2">
+              {CATEGORY_TABS.map((tab, i) => {
+                const isActive = activeTab === tab.key;
+                const filteredChars = tabChars.filter((c) => c.category === tab.key);
+                const completed = filteredChars.filter((c) => c.hasStrokes).length;
+                const total = filteredChars.length;
+                const colors: Record<string, string> = {
+                  uppercase: 'bg-blue-50 border-blue-100',
+                  lowercase: 'bg-purple-50 border-purple-100',
+                  numbers: 'bg-orange-50 border-orange-100',
+                  symbols: 'bg-pink-50 border-pink-100',
+                };
+                const activeColors: Record<string, string> = {
+                  uppercase: 'bg-blue-100 border-blue-300',
+                  lowercase: 'bg-purple-100 border-purple-300',
+                  numbers: 'bg-orange-100 border-orange-300',
+                  symbols: 'bg-pink-100 border-pink-300',
+                };
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    aria-pressed={isActive}
+                    className={`w-full flex items-center justify-between gap-2 p-3 rounded-2xl border transition-all duration-200 ${isActive ? activeColors[tab.key] : colors[tab.key]} hover:shadow-sm`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-lg ${isActive ? 'bg-white shadow-sm' : 'bg-white/50'}`}>
+                        {tab.key === 'uppercase' && <span className="text-blue-700">Aᶻ</span>}
+                        {tab.key === 'lowercase' && <span className="text-purple-700">a</span>}
+                        {tab.key === 'numbers' && <span className="text-orange-700">123</span>}
+                        {tab.key === 'symbols' && <span className="text-pink-700">&</span>}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm text-neutral-900">{tab.label}</p>
+                        <p className="font-mono text-[10px] text-neutral-500">{completed}/{total}</p>
+                      </div>
+                    </div>
+                    <ChevronRight className={`h-4 w-4 text-neutral-400 transition-transform ${isActive ? 'rotate-90' : ''}`} />
+                  </button>
+                );
+              })}
             </div>
 
-            {/* ------------------------------------------------ characters */}
-            <div
-              className={`min-h-0 flex-1 flex-col gap-2.5 ${
-                panelTab === 'chars' ? 'flex' : 'hidden lg:flex'
-              }`}
-            >
-              <div className="flex shrink-0 items-center gap-2.5">
-                <span
-                  key={character.char}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 font-serif text-xl font-semibold text-neutral-900"
-                >
-                  {character.char}
-                </span>
-                <p className="min-w-0 flex-1 text-[10px] leading-tight text-neutral-500">
-                  <span className="block truncate font-medium capitalize text-neutral-800">
-                    {character.category}
-                    {currentIndex >= 0 ? ` \u00b7 ${currentIndex + 1} of ${allCharacterList.length}` : ''}
-                  </span>
-                  <span className="truncate">{milestone ?? WRITING_TIPS[tipIndex]}</span>
-                </p>
-              </div>
-
-              <div className="flex shrink-0 gap-1 rounded-lg bg-neutral-100 p-0.5">
-                {CATEGORY_TABS.map((tab) => {
-                  const isActive = activeTab === tab.key;
-                  return (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setActiveTab(tab.key)}
-                      aria-pressed={isActive}
-                      className={`flex-1 cursor-pointer rounded-md px-1 py-1 font-mono text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                        isActive ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-900'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div
-                className={`grid min-h-0 flex-1 content-start gap-1 ${
-                  activeTab === 'uppercase' || activeTab === 'lowercase'
-                    ? 'grid-cols-7 sm:grid-cols-9'
-                    : 'grid-cols-7 sm:grid-cols-10'
-                }`}
-              >
-                {tabChars.map((c) => {
-                  const isCurrent = c.char === character.char;
-                  return (
-                    <button
-                      key={c.char}
-                      type="button"
-                      onClick={() => switchCharacter(c.char)}
-                      title={c.hasStrokes ? `${c.char} \u2014 completed` : `${c.char} \u2014 not written yet`}
-                      aria-label={c.hasStrokes ? `${c.char}, completed` : `${c.char}, not written yet`}
-                      aria-current={isCurrent}
-                      className={`relative flex aspect-square cursor-pointer items-center justify-center rounded-md border text-[11px] font-medium leading-none transition-all duration-150 hover:border-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                        isCurrent
-                          ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm'
-                          : c.hasStrokes
-                          ? 'border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50'
-                          : 'border-dashed border-neutral-300 bg-white text-neutral-400 hover:border-neutral-500'
-                      }`}
-                    >
-                      {c.char}
-                      {c.hasStrokes ? (
-                        <span
-                          className={`absolute right-[3px] top-[3px] h-1 w-1 rounded-full bg-blue-500 transition-transform duration-200 ${
-                            isCurrent ? 'scale-125' : ''
-                          }`}
-                        />
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* ------------------------------------------------ tools */}
-            <div
-              className={`min-h-0 flex-1 flex-col gap-2.5 ${
-                panelTab === 'tools' ? 'flex' : 'hidden lg:flex'
-              }`}
-            >
-              <div className="flex shrink-0 gap-1 rounded-lg bg-neutral-100 p-0.5">
-                {(['pen', 'eraser'] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTool(t)}
-                    aria-pressed={tool === t}
-                    className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                      tool === t ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-900'
-                    }`}
-                  >
-                    {t === 'pen' ? <PenTool className="h-3.5 w-3.5" /> : <Eraser className="h-3.5 w-3.5" />}
-                    {t}
-                  </button>
-                ))}
-              </div>
-
-              {tool === 'pen' ? (
-                <div className="grid shrink-0 grid-cols-4 gap-1">
-                  {(['gel', 'fountain', 'marker', 'pencil'] as PenStyle[]).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setPenStyle(s)}
-                      aria-pressed={penStyle === s}
-                      className={`cursor-pointer rounded-md border px-1 py-1 text-[10px] capitalize leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                        penStyle === s
-                          ? 'border-neutral-900 bg-neutral-900 text-white'
-                          : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                      }`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex shrink-0 flex-col gap-1.5">
-                  <div className="flex items-center justify-between px-0.5 text-[10px] text-neutral-500">
-                    <span>Eraser size</span>
-                    <span className="font-mono tabular-nums">{Math.round(eraserRadius)}px</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={ERASER_RADIUS.min}
-                    max={ERASER_RADIUS.max}
-                    step={1}
-                    value={eraserRadius}
-                    onChange={(e) => setEraserRadius(Number(e.target.value))}
-                    aria-label="Eraser size"
-                    className="w-full cursor-grab active:cursor-grabbing"
-                  />
-                </div>
-              )}
-
-              {tool === 'pen' ? (
-                <div className="flex shrink-0 gap-1">
-                  {(Object.keys(PEN_WIDTHS) as (keyof typeof PEN_WIDTHS)[]).map((label) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => setStrokeWidth(PEN_WIDTHS[label])}
-                      aria-pressed={strokeWidth === PEN_WIDTHS[label]}
-                      className={`flex-1 cursor-pointer rounded-md border py-1 text-[10px] leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                        strokeWidth === PEN_WIDTHS[label]
-                          ? 'border-neutral-900 bg-neutral-900 text-white'
-                          : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="flex shrink-0 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setShowGuidelines((v) => !v)}
-                  aria-pressed={showGuidelines}
-                  title={showGuidelines ? 'Hide guidelines' : 'Show guidelines'}
-                  className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border px-1.5 text-[10px] leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                    showGuidelines
-                      ? 'border-neutral-900 bg-neutral-900 text-white'
-                      : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  {showGuidelines ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                </button>
-                {(['typography', 'notebook', 'dots', 'blank'] as GuidelineStyle[]).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => {
-                      setGuidelineStyle(s);
-                      setShowGuidelines(s !== 'blank');
-                    }}
-                    aria-pressed={guidelineStyle === s}
-                    className={`flex-1 cursor-pointer truncate rounded-md border px-1 py-1 text-[10px] capitalize leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                      guidelineStyle === s
-                        ? 'border-neutral-900 bg-neutral-900 text-white'
-                        : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => selectVariant(-1)}
-                  aria-pressed={activeVariant === -1}
-                  className={`shrink-0 cursor-pointer rounded-md border px-1.5 py-1 text-[10px] leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-900 ${
-                    activeVariant === -1
-                      ? 'border-neutral-900 bg-neutral-900 text-white'
-                      : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  Main
-                </button>
-                {variants.map((v, i) => (
-                  <span key={i} className="inline-flex min-w-0 items-center overflow-hidden rounded-md border border-neutral-200">
-                    <button
-                      type="button"
-                      onClick={() => selectVariant(i)}
-                      aria-pressed={activeVariant === i}
-                      className={`min-w-0 cursor-pointer truncate px-1.5 py-1 text-[10px] leading-none transition-colors ${
-                        activeVariant === i ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-50'
-                      }`}
-                    >
-                      Alt {i + 1}
-                      {v.length > 0 ? ' \u2022' : ''}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => confirmVariantDelete(i)}
-                      aria-label={`Delete alternate ${i + 1}`}
-                      className="cursor-pointer px-1 py-1 text-neutral-400 transition-colors hover:text-rose-600"
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  </span>
-                ))}
-                {variants.length < 3 ? (
-                  <button
-                    type="button"
-                    onClick={addVariant}
-                    aria-label="Add alternate"
-                    className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-md border border-dashed border-neutral-300 px-1.5 py-1 text-[10px] leading-none text-neutral-500 transition-colors hover:border-neutral-500 hover:text-neutral-900"
-                  >
-                    <Plus className="h-3 w-3" />
-                  </button>
-                ) : null}
-              </div>
-
+            {/* Motivational Note */}
+            <div className="mt-auto flex flex-col items-center gap-2 border-t border-neutral-100 pt-4 text-center">
+              <p className="font-handwriting text-base leading-tight text-neutral-800">
+                Write
+                <br />
+                each letter
+                <br />
+                with care
+              </p>
+              <span aria-hidden="true" className="text-sm text-rose-400">♥</span>
             </div>
           </div>
         </aside>
