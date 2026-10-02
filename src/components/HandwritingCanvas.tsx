@@ -12,6 +12,7 @@ import {
   PenTool,
   RotateCcw,
   RotateCw,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   X,
@@ -162,6 +163,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [validationMsg, setValidationMsg] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(projectName);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [variantToDelete, setVariantToDelete] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
@@ -1066,7 +1068,68 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       </header>
 
       {/* Main workspace */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-2 sm:gap-4 sm:p-3 lg:p-4">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 p-2 sm:gap-3 sm:p-3 lg:gap-4 lg:p-4">
+        {/* Mobile / tablet character navigator: 4 tabs + letters with saved dots */}
+        <div className="flex shrink-0 flex-col gap-1.5 rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm lg:hidden">
+          <div className="grid grid-cols-4 gap-1.5">
+            {(
+              [
+                { key: "upper", short: "A", name: "A–Z", count: getCategoryProgress(categoryGroups.upper), active: category === "uppercase" },
+                { key: "lower", short: "a", name: "a–z", count: getCategoryProgress(categoryGroups.lower), active: category === "lowercase" },
+                { key: "nums", short: "0", name: "0–9", count: getCategoryProgress(categoryGroups.nums), active: category === "numbers" },
+                { key: "symbols", short: "#", name: "Sym", count: getCategoryProgress(categoryGroups.symbols), active: category === "symbols" },
+              ] as const
+            ).map((cat) => (
+              <button
+                key={cat.key}
+                type="button"
+                onClick={() => {
+                  const group = cat.key === "upper" ? alpha : cat.key === "lower" ? alphaLower : cat.key === "nums" ? digits : symbolsList;
+                  if (group[0]) {
+                    saveAndGo(() => {
+                      if (onSelectCharacter) onSelectCharacter(group[0]);
+                      else window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: group[0] }));
+                    });
+                  }
+                }}
+                className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-center transition-all ${
+                  cat.active ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700"
+                }`}
+              >
+                <span className="text-sm font-bold leading-none">{cat.short}</span>
+                <span className="text-[10px] font-semibold leading-none">{cat.name}</span>
+                <span className={`text-[9px] leading-none ${cat.active ? "text-neutral-300" : "text-neutral-400"}`}>
+                  {cat.count.done}/{cat.count.total}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
+              const cd = allChars.find((c: unknown) => (c as CharacterData).char === ch);
+              const done = (cd as { completed?: boolean } | undefined)?.completed || (cd?.strokes?.length ?? 0) > 0;
+              const cur = character.char === ch;
+              return (
+                <button
+                  key={ch}
+                  type="button"
+                  onClick={() => {
+                    saveAndGo(() => {
+                      if (onSelectCharacter) onSelectCharacter(ch);
+                      else window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
+                    });
+                  }}
+                  className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-sm font-medium transition-all ${
+                    cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700"
+                  }`}
+                >
+                  {ch}
+                  {done ? <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-blue-600 ring-1 ring-white" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         {/* Top row: sidebar + canvas + tools */}
         <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden sm:gap-3 md:grid-cols-[minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_220px] xl:grid-cols-[260px_minmax(0,1fr)_240px] lg:px-2">
           {/* Left Sidebar */}
@@ -1159,10 +1222,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </aside>
 
           {/* Center Canvas */}
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center">
+          <main className="flex min-h-[320px] min-w-0 flex-1 flex-col items-center justify-center sm:min-h-[420px] lg:min-h-0">
             <div className="flex w-full min-w-0 max-w-full flex-1 flex-col items-center rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,920px)] xl:max-w-[min(100%,980px)] 2xl:max-w-[min(100%,1040px)]">
               {/* Canvas header */}
-              <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
+              <div className="relative flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
                 <div className="flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900 shadow-sm sm:h-12 sm:w-12 sm:text-3xl">
                     {character.char}
@@ -1173,6 +1236,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     </span>
                   ) : null}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileToolsOpen((o) => !o)}
+                  className={`absolute right-3 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors lg:hidden ${
+                    mobileToolsOpen ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+                  }`}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" /> Tools
+                </button>
               </div>
 
               {/* Canvas card */}
@@ -1242,7 +1314,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </main>
 
           {/* Right Tool Panel */}
-          <aside className="hidden h-full w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:flex-col" style={{ overflow: "hidden" }}>
+          <aside
+            className={`${mobileToolsOpen ? "flex" : "hidden"} h-auto w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:h-full lg:flex-col`}
+            style={{ overflow: "hidden" }}
+          >
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {/* Pen/Eraser */}
               <div className="flex flex-col gap-2 p-3">
