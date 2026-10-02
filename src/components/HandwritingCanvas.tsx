@@ -287,6 +287,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setIsDirty(true);
   }, [pushUndo, variants.length]);
 
+  // Lock page scroll while the editor is open so no page scrollbar appears.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   // Reset local glyph state whenever a different character is opened.
   // The same component instance is reused across A → B → A, so without
   // this the previous character's strokes/undo history would leak through.
@@ -1139,7 +1148,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       }`}
                     >
                       {ch}
-                      {done ? <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-600 ring-1 ring-white" /> : null}
+                      {done ? <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-blue-600 ring-1 ring-white" /> : null}
                     </button>
                   );
                 })}
