@@ -16,12 +16,14 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { WhereToUseStory } from './WhereToUseStory';
+import { MobileHomeView } from './MobileHomeView';
 
 interface LandingPageProps {
   onStartWriting: () => void;
   onExploreStyles: () => void;
   onOpenQuiz: () => void;
   onOpenLearn: () => void;
+  onSeePricing?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
@@ -29,6 +31,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onExploreStyles,
   onOpenQuiz,
   onOpenLearn,
+  onSeePricing,
 }) => {
   // "Write to Type" Hero Interaction State (DRAW MODE COMES FIRST AS REQUESTED)
   const [heroInputText, setHeroInputText] = useState('TypeMe');
@@ -269,7 +272,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   }, [heroStrokes, heroMode, heroPenWidth]);
 
   return (
-    <div className="bg-neutral-50 text-neutral-900 relative selection:bg-amber-100 selection:text-neutral-900">
+    <>
+      {/* Mobile + tablet: purpose-built app-like home (desktop below stays untouched). */}
+      <div className="lg:hidden">
+        <MobileHomeView
+          onCreate={onStartWriting}
+          onExplore={onExploreStyles}
+          onSeePricing={onSeePricing ?? onStartWriting}
+        />
+      </div>
+      <div className="hidden bg-neutral-50 text-neutral-900 relative selection:bg-amber-100 selection:text-neutral-900 lg:block">
       {/* ========================================================================= */}
       {/* 1. HERO SECTION WITH ANIMATED FAST ACTION WORD & EXPANDED DRAW PAD        */}
       {/* ========================================================================= */}
@@ -881,6 +893,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
       </section>
-    </div>
+      </div>
+    </>
   );
 };

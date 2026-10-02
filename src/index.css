@@ -260,6 +260,42 @@
   }
 }
 
+/* Mobile home: handwriting underline draw loop (lightweight SVG). */
+.tm-mhome-draw {
+  stroke-dasharray: 210;
+  stroke-dashoffset: 210;
+  animation: tm-mhome-draw 4.2s ease-in-out infinite;
+}
+
+@keyframes tm-mhome-draw {
+  0% {
+    stroke-dashoffset: 210;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  45% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  80% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -210;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-mhome-draw {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 /* Hand-drawn marks sketch themselves in as a scene settles.
    pathLength={1} normalises every path to a single dash unit, so the dash
    offset can be driven straight from the scroll-derived --d. That keeps the

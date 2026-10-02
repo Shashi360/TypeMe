@@ -304,6 +304,7 @@ export default function App() {
               onExploreStyles={() => setCurrentView('explore')}
               onOpenQuiz={() => setQuizModalOpen(true)}
               onOpenLearn={() => setCurrentView('learn')}
+              onSeePricing={() => setCurrentView('pricing')}
             />
           )}
 
