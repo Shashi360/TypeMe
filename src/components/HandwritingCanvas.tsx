@@ -866,9 +866,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0 && activeStrokeRef.current.length === 0 ? (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-6 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-stone-300"
+            className="pointer-events-none absolute inset-x-0 bottom-4 text-center font-mono text-[9px] uppercase tracking-[0.3em] text-neutral-300"
           >
-            Write naturally
+            WRITE NATURALLY
           </div>
         ) : null}
       </div>
@@ -1307,20 +1307,25 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         </aside>
         {/* ------------------------------------------------- RIGHT: editor */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-neutral-50">
-          <div className="flex shrink-0 items-center justify-center border-b border-neutral-200 bg-white px-3 py-2">
-            <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center justify-center border-b border-neutral-200 bg-white px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
               <span
                 data-testid="editor-current-char"
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 font-serif text-lg font-semibold leading-none text-neutral-900"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 font-serif text-xl font-semibold leading-none text-neutral-900 shadow-sm"
               >
                 {character.char}
               </span>
-              {milestone ? (
-                <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700">
-                  <Sparkles className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{milestone}</span>
-                </span>
-              ) : null}
+              <div className="flex flex-col items-center justify-center gap-1">
+                {milestone ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                    <Sparkles className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{milestone}</span>
+                  </span>
+                ) : null}
+                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-400">
+                  Stay between the cap line and the baseline
+                </p>
+              </div>
             </div>
           </div>
 
