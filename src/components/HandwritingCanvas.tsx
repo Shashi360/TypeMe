@@ -331,15 +331,23 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     if (!canvas || !container) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const rect = container.getBoundingClientRect();
-    const cssW = rect.width || 1;
-    const cssH = rect.height || 1;
+    // Layout determines CSS size; JS only adapts the internal bitmap.
+    // Never write canvas.style.width/height here — that leaks the bitmap
+    // size into CSS layout and forces the center column wider (feedback loop).
+    const canvasRect = canvas.getBoundingClientRect();
+    let cssW = canvasRect.width || 0;
+    let cssH = canvasRect.height || 0;
+    if (!cssW || !cssH) {
+      const rect = container.getBoundingClientRect();
+      const padX = container.clientWidth ? Math.max(0, rect.width - container.clientWidth) : 0;
+      const padY = container.clientHeight ? Math.max(0, rect.height - container.clientHeight) : 0;
+      cssW = Math.max(1, rect.width - padX);
+      cssH = Math.max(1, rect.height - padY);
+    }
     const scale = dpr;
     if (canvas.width !== Math.floor(cssW * scale) || canvas.height !== Math.floor(cssH * scale)) {
       canvas.width = Math.floor(cssW * scale);
       canvas.height = Math.floor(cssH * scale);
-      canvas.style.width = `${cssW}px`;
-      canvas.style.height = `${cssH}px`;
     }
     const w = canvas.width;
     const h = canvas.height;
@@ -872,7 +880,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               </div>
 
               {/* Canvas card */}
-              <div className="relative flex min-h-0 flex-1 flex-col p-2 sm:p-3 lg:p-4">
+              <div className="relative flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden p-2 sm:p-3 lg:p-4">
                 {variantToDelete !== null ? (
                   <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 shadow-sm">
                     <AlertCircle className="h-3.5 w-3.5" />
@@ -888,7 +896,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 {/* Canvas stage */}
                 <div
                   ref={containerRef}
-                  className="relative flex min-h-0 w-full items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
+                  className="relative flex min-h-0 w-full min-w-0 max-w-full items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
                   style={{ overflow: "hidden", aspectRatio: "1 / 1", maxHeight: "100%" }}
                 >
                   {isEraser && eraserPos ? (
@@ -910,8 +918,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     onPointerUp={endDrawing}
                     onPointerCancel={handlePointerCancel}
                     onPointerLeave={handlePointerCancel}
-                    className="touch-none cursor-crosshair"
-                    style={{ touchAction: "none", width: "100%", height: "100%", objectFit: "contain" }}
+                    className="block h-full w-full max-w-full touch-none cursor-crosshair"
+                    style={{ touchAction: "none" }}
                   />
                   {/* Bottom canvas message */}
                   <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
