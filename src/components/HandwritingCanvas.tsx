@@ -547,15 +547,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
     if (canvasStyle !== "blank") {
       ctx.save();
-      ctx.globalAlpha = canvasStyle === "typography" ? 0.22 : 0.18;
-      ctx.strokeStyle = "#9CA3AF";
-      ctx.lineWidth = 0.9;
-      ctx.setLineDash([2, 4]);
       const capY = VIRTUAL_HEIGHT * 0.24;
       const upperY = VIRTUAL_HEIGHT * 0.36;
       const baseY = VIRTUAL_HEIGHT * 0.64;
       const descY = VIRTUAL_HEIGHT * 0.8;
-      if (canvasStyle === "typography" || canvasStyle === "notebook") {
+      if (canvasStyle === "typography") {
+        ctx.globalAlpha = 0.25;
+        ctx.strokeStyle = "#9CA3AF";
+        ctx.lineWidth = 0.9;
+        ctx.setLineDash([2, 4]);
         ctx.beginPath();
         ctx.moveTo(10, capY);
         ctx.lineTo(VIRTUAL_WIDTH - 10, capY);
@@ -574,8 +574,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         ctx.stroke();
       }
       if (canvasStyle === "notebook") {
-        ctx.globalAlpha = 0.16;
-        ctx.setLineDash([1, 6]);
+        // Real notebook: solid grey rules across the full writing area,
+        // independent from the typography guides.
+        ctx.globalAlpha = 0.28;
+        ctx.strokeStyle = "#6B7280";
+        ctx.lineWidth = 0.9;
+        ctx.setLineDash([]);
         for (let y = 24; y <= VIRTUAL_HEIGHT - 20; y += 18) {
           ctx.beginPath();
           ctx.moveTo(10, y);
@@ -584,7 +588,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         }
       }
       if (canvasStyle === "dots") {
-        ctx.globalAlpha = 0.18;
+        ctx.globalAlpha = 0.2;
         ctx.setLineDash([]);
         const spacing = 16;
         for (let x = 20; x < VIRTUAL_WIDTH - 20; x += spacing) {
@@ -1135,7 +1139,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       }`}
                     >
                       {ch}
-                      {done ? <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-white" /> : null}
+                      {done ? <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-600 ring-1 ring-white" /> : null}
                     </button>
                   );
                 })}
@@ -1230,7 +1234,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
           {/* Right Tool Panel */}
           <aside className="hidden h-full w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:flex-col" style={{ overflow: "hidden" }}>
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-[#E8E8E3] bg-white shadow-sm">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {/* Pen/Eraser */}
               <div className="flex flex-col gap-2 p-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Tool</span>
@@ -1255,20 +1259,19 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   </button>
                 </div>
                 {toolMode === "eraser" ? (
-                  <div className="flex flex-col gap-1.5 rounded-xl border border-[#E8E8E3] bg-neutral-50 p-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-neutral-500">Eraser Size</span>
-                      <span className="text-[10px] font-medium text-neutral-700">{eraserSize}px</span>
-                    </div>
+                  <div className="flex items-center gap-2 rounded-xl border border-[#E8E8E3] bg-neutral-50 px-2 py-1.5">
+                    <span className="shrink-0 text-[10px] text-neutral-500">Size</span>
                     <input
                       type="range"
                       min={6}
                       max={80}
                       step={1}
                       value={eraserSize}
+                      onFocus={(e) => e.preventDefault()}
                       onChange={(e) => setEraserSize(Number(e.target.value))}
                       className="h-1 w-full accent-neutral-900"
                     />
+                    <span className="shrink-0 text-[10px] font-medium text-neutral-700">{eraserSize}</span>
                   </div>
                 ) : null}
               </div>
@@ -1399,10 +1402,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 </div>
               </div>
 
-              {/* Bottom decoration */}
-              <div className="mt-auto border-t border-[#E8E8E3] p-3">
-                {/* Decorative note removed as requested */}
-              </div>
             </div>
           </aside>
         </div>
