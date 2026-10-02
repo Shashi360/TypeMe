@@ -51,6 +51,7 @@ interface HandwritingCanvasProps {
   completedCount?: number;
   totalCount?: number;
   projectName?: string;
+  onRenameProject?: (name: string) => void;
   onClose?: () => void;
   allCharacterList?: { char: string; category: string; hasStrokes: boolean }[];
   onSelectCharacter?: (char: string) => void;
@@ -122,6 +123,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   completedCount = 0,
   totalCount = 0,
   projectName = "My Handwriting",
+  onRenameProject,
   onClose,
   allCharacterList,
   onSelectCharacter,
@@ -158,6 +160,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [showQuality, setShowQuality] = useState(false);
   const [quality, setQuality] = useState<QualityAnalysis | null>(null);
   const [validationMsg, setValidationMsg] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(projectName);
   const [variantToDelete, setVariantToDelete] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
@@ -419,25 +423,39 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
   const eraseAt = useCallback(
     (p: Point) => {
-      // Stroke-level erase: any stroke touched by the eraser is removed
-      // whole, so it stays erased after redraw/switch/save. The eraser
-      // slider is in screen px — convert it into virtual canvas units.
+      // Smooth partial erase: drop only the points touched by the eraser
+      // and split the stroke into its remaining contiguous runs, so a drag
+      // carves through handwriting instead of deleting whole strokes.
       const canvas = canvasRef.current;
       const rect = canvas?.getBoundingClientRect();
       const vRadius =
         rect && rect.width > 0
           ? Math.max(3, (eraserSize / rect.width) * VIRTUAL_WIDTH)
           : Math.max(3, eraserSize / 2);
+      let changed = false;
       const next: Stroke[] = [];
       const nextStyles: StrokeStyle[] = [];
       activeStrokes.forEach((pts, i) => {
-        const hit = pts.some((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) <= vRadius);
-        if (!hit) {
-          next.push(pts);
-          nextStyles.push(activeStyles[i] ?? { brush: brushType, size: strokeSize });
+        const style = activeStyles[i] ?? { brush: brushType, size: strokeSize };
+        let run: Point[] = [];
+        const flush = () => {
+          if (run.length > 0) {
+            next.push(run);
+            nextStyles.push(style);
+            run = [];
+          }
+        };
+        for (const pt of pts) {
+          if (Math.hypot(pt.x - p.x, pt.y - p.y) <= vRadius) {
+            changed = true;
+            flush();
+          } else {
+            run.push(pt);
+          }
         }
+        flush();
       });
-      if (next.length !== activeStrokes.length) {
+      if (changed) {
         setActiveStrokes(next, nextStyles);
       }
     },
@@ -529,9 +547,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
     if (canvasStyle !== "blank") {
       ctx.save();
-      ctx.globalAlpha = canvasStyle === "typography" ? 0.13 : 0.1;
+      ctx.globalAlpha = canvasStyle === "typography" ? 0.22 : 0.18;
       ctx.strokeStyle = "#9CA3AF";
-      ctx.lineWidth = 0.7;
+      ctx.lineWidth = 0.9;
       ctx.setLineDash([2, 4]);
       const capY = VIRTUAL_HEIGHT * 0.24;
       const upperY = VIRTUAL_HEIGHT * 0.36;
@@ -556,7 +574,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         ctx.stroke();
       }
       if (canvasStyle === "notebook") {
-        ctx.globalAlpha = 0.09;
+        ctx.globalAlpha = 0.16;
         ctx.setLineDash([1, 6]);
         for (let y = 24; y <= VIRTUAL_HEIGHT - 20; y += 18) {
           ctx.beginPath();
@@ -566,7 +584,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         }
       }
       if (canvasStyle === "dots") {
-        ctx.globalAlpha = 0.1;
+        ctx.globalAlpha = 0.18;
         ctx.setLineDash([]);
         const spacing = 16;
         for (let x = 20; x < VIRTUAL_WIDTH - 20; x += spacing) {
@@ -921,9 +939,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 <span className="text-sm font-bold tracking-tight text-neutral-900 sm:text-base">Type</span>
                 <span className="font-handwriting text-lg font-bold italic text-neutral-900 sm:text-xl -ml-0.5">Me</span>
               </span>
-              <span className="hidden text-sm font-medium text-neutral-500 sm:inline">•</span>
-              <span className="hidden truncate text-sm font-medium text-neutral-700 sm:inline">{projectName}</span>
-              <Edit2 className="ml-1 h-3.5 w-3.5 text-neutral-400" />
             </div>
           </div>
           <div className="hidden items-center gap-2.5 rounded-full border border-[#E8E8E3] bg-neutral-50 px-3 py-1.5 lg:flex">
@@ -936,14 +951,69 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
         </div>
 
-        {/* Center */}
-        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1">
-          <div className="flex items-center gap-2 rounded-full border border-[#E8E8E3] bg-white px-2.5 py-1 shadow-sm">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900 font-serif text-base font-semibold text-white">
-              {character.char}
-            </span>
-            <span className="text-[10px] uppercase tracking-[0.22em] text-neutral-400">Current</span>
-          </div>
+        {/* Center — project name (editable) */}
+        <div className="absolute left-1/2 top-1/2 flex max-w-[40vw] -translate-x-1/2 -translate-y-1/2 items-center">
+          {editingName ? (
+            <div className="flex items-center gap-1 rounded-full border border-neutral-300 bg-white px-2 py-1 shadow-sm">
+              <input
+                value={nameDraft}
+                autoFocus
+                maxLength={40}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const next = nameDraft.trim();
+                    if (next && onRenameProject) onRenameProject(next);
+                    setEditingName(false);
+                  } else if (e.key === "Escape") {
+                    setNameDraft(projectName);
+                    setEditingName(false);
+                  }
+                }}
+                className="w-28 bg-transparent text-sm font-medium text-neutral-900 outline-none sm:w-44"
+              />
+              <button
+                type="button"
+                aria-label="Save name"
+                onClick={() => {
+                  const next = nameDraft.trim();
+                  if (next && onRenameProject) onRenameProject(next);
+                  setEditingName(false);
+                }}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-white"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label="Cancel rename"
+                onClick={() => {
+                  setNameDraft(projectName);
+                  setEditingName(false);
+                }}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#E8E8E3] text-neutral-500"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={!onRenameProject}
+              onClick={() => {
+                if (!onRenameProject) return;
+                setNameDraft(projectName);
+                setEditingName(true);
+              }}
+              title={onRenameProject ? "Rename" : undefined}
+              className={`flex min-w-0 items-center gap-1.5 rounded-full border border-[#E8E8E3] bg-white px-3 py-1 shadow-sm ${
+                onRenameProject ? "cursor-pointer hover:border-neutral-300" : "cursor-default"
+              }`}
+            >
+              <span className="truncate text-sm font-semibold text-neutral-900">{projectName}</span>
+              {onRenameProject ? <Edit2 className="h-3.5 w-3.5 shrink-0 text-neutral-400" /> : null}
+            </button>
+          )}
         </div>
 
         {/* Right */}
@@ -1065,7 +1135,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       }`}
                     >
                       {ch}
-                      {done && !cur ? <Check className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 text-emerald-600" /> : null}
+                      {done ? <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-white" /> : null}
                     </button>
                   );
                 })}
@@ -1160,7 +1230,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
           {/* Right Tool Panel */}
           <aside className="hidden h-full w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:flex-col" style={{ overflow: "hidden" }}>
-            <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-[#E8E8E3] bg-white shadow-sm">
               {/* Pen/Eraser */}
               <div className="flex flex-col gap-2 p-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Tool</span>

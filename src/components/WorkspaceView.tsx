@@ -34,6 +34,7 @@ interface WorkspaceViewProps {
     strokeStyles?: { brush: string; size: string }[],
     variantStyles?: { brush: string; size: string }[][],
   ) => void;
+  onRenameProject?: (name: string) => void;
   onBackToDashboard: () => void;
   onOpenReview: () => void;
   onOpenPreview: () => void;
@@ -43,6 +44,7 @@ interface WorkspaceViewProps {
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   project,
   onUpdateCharacter,
+  onRenameProject,
   onBackToDashboard,
   onOpenReview,
   onOpenPreview,
@@ -364,6 +366,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           allCharacterList={characterListSummary}
           onSelectCharacter={handleSelectChar}
           projectName={project.name}
+          onRenameProject={onRenameProject}
           completedCount={completedChars}
           totalCount={totalChars}
         />

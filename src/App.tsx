@@ -331,6 +331,7 @@ export default function App() {
             <WorkspaceView
               project={activeProject}
               onUpdateCharacter={handleUpdateCharacter}
+              onRenameProject={(name) => handleUpdateProjectName(activeProject.id, name)}
               onBackToDashboard={() => setCurrentView(user ? 'dashboard' : 'landing')}
               onOpenReview={() => setCurrentView('review')}
               onOpenPreview={() => setCurrentView('preview')}
