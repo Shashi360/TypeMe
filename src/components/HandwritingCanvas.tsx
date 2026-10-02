@@ -1299,27 +1299,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 ) : null}
               </div>
 
-              <div className="mt-auto flex shrink-0 items-start gap-1.5 border-t border-neutral-100 pt-2 text-[10px] leading-snug">
-                <span data-testid="editor-stroke-count" className="shrink-0 font-mono text-neutral-500">
-                  {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length}
-                  {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 1 ? ' stroke' : ' strokes'}
-                </span>
-                {(activeVariant === -1 ? strokes : variants[activeVariant] ?? []).length === 0 ? (
-                  <span className="truncate text-neutral-400">Start writing \u2014 nothing is lost, it autosaves.</span>
-                ) : (
-                  <span
-                    className={
-                      quality.status === 'good'
-                        ? 'text-emerald-600'
-                        : quality.status === 'warning'
-                        ? 'text-amber-600'
-                        : 'text-rose-600'
-                    }
-                  >
-                    {quality.feedback}
-                  </span>
-                )}
-              </div>
             </div>
           </div>
         </aside>
