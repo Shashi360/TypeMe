@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FontProject, CharacterData, Stroke } from '../types';
-import { ALL_CHARACTERS } from '../utils/sampleData';
+import { ALL_CHARACTERS, CharDefinition } from '../utils/sampleData';
 import { HandwritingCanvas } from './HandwritingCanvas';
 import {
   ArrowLeft,
@@ -9,7 +9,14 @@ import {
   PenTool,
   ArrowRight,
   Filter,
+  Lock,
 } from 'lucide-react';
+import {
+  getEntitlements,
+  upgradeForCharacters,
+  type UpgradeCopy,
+} from '../utils/entitlements';
+import { UpgradeModal } from './UpgradeModal';
 
 interface ReviewViewProps {
   project: FontProject;
@@ -22,6 +29,8 @@ interface ReviewViewProps {
   ) => void;
   onBackToWorkspace: () => void;
   onContinueToPreview: () => void;
+  tier?: string;
+  onUpgrade?: () => void;
 }
 
 export const ReviewView: React.FC<ReviewViewProps> = ({
@@ -29,6 +38,8 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
   onUpdateCharacter,
   onBackToWorkspace,
   onContinueToPreview,
+  tier = 'free',
+  onUpgrade,
 }) => {
   const [filter, setFilter] = useState<'all' | 'completed' | 'warning' | 'unwritten'>('all');
   const [editingChar, setEditingChar] = useState<CharacterData | null>(null);
@@ -50,19 +61,40 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
     return true;
   });
 
+  const [upgrade, setUpgrade] = useState<UpgradeCopy | null>(null);
+  const ent = getEntitlements(tier);
+
+  const charDataFor = (def: CharDefinition): CharacterData => {
+    return (
+      project.characters[def.char] || {
+        char: def.char,
+        unicode: def.unicode,
+        category: def.category,
+        strokes: [],
+        qualityStatus: 'empty',
+      }
+    );
+  };
+
+  const isLockedDef = (def: CharDefinition): boolean => {
+    const data = project.characters[def.char];
+    const hasStrokes = !!((data as { strokes?: Stroke[] } | undefined)?.strokes?.length);
+    return !ent.isCharacterAllowed(def.char, hasStrokes);
+  };
+
+  const openCharDef = (def: CharDefinition) => {
+    if (isLockedDef(def)) {
+      setUpgrade(upgradeForCharacters);
+      return;
+    }
+    setEditingChar(charDataFor(def));
+  };
+
   const handleNextChar = () => {
     if (!editingChar) return;
     const currentIndex = ALL_CHARACTERS.findIndex((d) => d.char === editingChar.char);
     if (currentIndex >= 0 && currentIndex < ALL_CHARACTERS.length - 1) {
-      const nextDef = ALL_CHARACTERS[currentIndex + 1];
-      const charData = project.characters[nextDef.char] || {
-        char: nextDef.char,
-        unicode: nextDef.unicode,
-        category: nextDef.category,
-        strokes: [],
-        qualityStatus: 'empty',
-      };
-      setEditingChar(charData);
+      openCharDef(ALL_CHARACTERS[currentIndex + 1]);
     }
   };
 
@@ -70,29 +102,14 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
     if (!editingChar) return;
     const currentIndex = ALL_CHARACTERS.findIndex((d) => d.char === editingChar.char);
     if (currentIndex > 0) {
-      const prevDef = ALL_CHARACTERS[currentIndex - 1];
-      const charData = project.characters[prevDef.char] || {
-        char: prevDef.char,
-        unicode: prevDef.unicode,
-        category: prevDef.category,
-        strokes: [],
-        qualityStatus: 'empty',
-      };
-      setEditingChar(charData);
+      openCharDef(ALL_CHARACTERS[currentIndex - 1]);
     }
   };
 
   const handleSelectChar = (char: string) => {
     const def = ALL_CHARACTERS.find((d) => d.char === char);
     if (!def) return;
-    const charData = project.characters[def.char] || {
-      char: def.char,
-      unicode: def.unicode,
-      category: def.category,
-      strokes: [],
-      qualityStatus: 'empty',
-    };
-    setEditingChar(charData);
+    openCharDef(def);
   };
 
   const characterListSummary = ALL_CHARACTERS.map((def) => {
@@ -206,16 +223,19 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
           };
           const hasStrokes = charData.strokes && charData.strokes.length > 0;
           const isWarning = hasStrokes && charData.qualityStatus === 'warning';
+          const locked = !ent.isCharacterAllowed(def.char, !!hasStrokes);
 
           return (
             <div
               key={def.char}
-              onClick={() => setEditingChar(charData)}
+              onClick={() => openCharDef(def)}
               className="p-3 rounded-xl border border-neutral-200 bg-white hover:border-neutral-900 transition-all cursor-pointer shadow-2xs group flex flex-col justify-between"
             >
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="font-bold font-mono text-neutral-800">{def.char}</span>
-                {hasStrokes ? (
+                {locked ? (
+                  <Lock className="w-3.5 h-3.5 text-neutral-400" />
+                ) : hasStrokes ? (
                   isWarning ? (
                     <span className="flex items-center gap-1 text-[10px] text-amber-700 font-medium">
                       <AlertTriangle className="w-3 h-3 text-amber-500" />
@@ -274,8 +294,18 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
           hasNext={true}
           allCharacterList={characterListSummary}
           onSelectCharacter={handleSelectChar}
+          tier={tier}
+          onUpgrade={onUpgrade}
         />
       )}
+
+      <UpgradeModal
+        open={!!upgrade}
+        feature={upgrade?.feature ?? ""}
+        description={upgrade?.description ?? ""}
+        onClose={() => setUpgrade(null)}
+        onUpgrade={onUpgrade}
+      />
     </div>
   );
 };

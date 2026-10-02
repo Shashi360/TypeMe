@@ -63,19 +63,19 @@ export const PricingView: React.FC<PricingViewProps> = ({
             <div className="border-t border-neutral-100 pt-5 space-y-3 text-xs text-neutral-700">
               <div className="flex items-center gap-2.5">
                 <Check className="w-3.5 h-3.5 text-neutral-900 shrink-0" />
-                <span>Create 1 font</span>
+                <span>20 starter characters (A–T) with autosave</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <Check className="w-3.5 h-3.5 text-neutral-900 shrink-0" />
-                <span>Basic character set (A-Z, a-z, Numbers)</span>
+                <span>Gel + Pencil brushes, Regular stroke</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <Check className="w-3.5 h-3.5 text-neutral-900 shrink-0" />
-                <span>Basic typography preview</span>
+                <span>Typography canvas + preview experience</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <Check className="w-3.5 h-3.5 text-neutral-900 shrink-0" />
-                <span>Standard TrueType (.TTF) download</span>
+                <span>Try processing — downloads need Pro</span>
               </div>
             </div>
           </div>

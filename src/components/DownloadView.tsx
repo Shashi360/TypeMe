@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { FontProject } from '../types';
 import {
   Download,
@@ -12,7 +12,10 @@ import {
   Laptop,
   Share2,
   Image,
+  Lock,
 } from 'lucide-react';
+import { getEntitlements, upgradeForDownload, type UpgradeCopy } from '../utils/entitlements';
+import { UpgradeModal } from './UpgradeModal';
 
 interface DownloadViewProps {
   project: FontProject;
@@ -20,6 +23,8 @@ interface DownloadViewProps {
   onCreateAnother: () => void;
   onBackToDashboard: () => void;
   onIncrementDownload: () => void;
+  tier?: string;
+  onUpgrade?: () => void;
 }
 
 export const DownloadView: React.FC<DownloadViewProps> = ({
@@ -28,6 +33,8 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
   onCreateAnother,
   onBackToDashboard,
   onIncrementDownload,
+  tier = 'free',
+  onUpgrade,
 }) => {
   const [copiedCss, setCopiedCss] = useState(false);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
@@ -39,7 +46,14 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
     ? (project.fileSizeBytes / 1024).toFixed(1)
     : '28.4';
 
+  const ent = useMemo(() => getEntitlements(tier), [tier]);
+  const [upgrade, setUpgrade] = useState<UpgradeCopy | null>(null);
+
   const handleDownload = (type: 'ttf' | 'otf') => {
+    if (!ent.canDownloadFont()) {
+      setUpgrade(upgradeForDownload);
+      return;
+    }
     const url = type === 'ttf' ? project.ttfBlobUrl : project.otfBlobUrl;
     if (!url) return;
 
@@ -137,8 +151,11 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
               disabled={!project.ttfBlobUrl}
               className="mt-6 w-full py-2.5 px-4 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-40 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5" />
+              {ent.canDownloadFont() ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
               <span>Download TrueType (.ttf)</span>
+              {!ent.canDownloadFont() ? (
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-white/15 px-1.5 py-0.5 rounded">Pro</span>
+              ) : null}
             </button>
           </div>
 
@@ -162,8 +179,11 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
               disabled={!project.otfBlobUrl}
               className="mt-6 w-full py-2.5 px-4 text-xs font-semibold text-neutral-900 bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 rounded-xl transition-colors border border-neutral-200 flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5" />
+              {ent.canDownloadFont() ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
               <span>Download OpenType (.otf)</span>
+              {!ent.canDownloadFont() ? (
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-neutral-900/10 px-1.5 py-0.5 rounded">Pro</span>
+              ) : null}
             </button>
           </div>
         </div>
@@ -312,6 +332,14 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
           </button>
         </div>
       </div>
+
+      <UpgradeModal
+        open={!!upgrade}
+        feature={upgrade?.feature ?? ""}
+        description={upgrade?.description ?? ""}
+        onClose={() => setUpgrade(null)}
+        onUpgrade={onUpgrade}
+      />
     </div>
   );
 };

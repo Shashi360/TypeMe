@@ -10,6 +10,7 @@ import {
   Edit2,
   Eraser,
   Grip,
+  Lock,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -23,6 +24,16 @@ import {
   Type,
   X,
 } from "lucide-react";
+import {
+  getEntitlements,
+  upgradeForBrush,
+  upgradeForCanvasStyle,
+  upgradeForCharacters,
+  upgradeForStrokeSize,
+  upgradeForVariants,
+  type UpgradeCopy,
+} from "../utils/entitlements";
+import { UpgradeModal } from "./UpgradeModal";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -59,6 +70,8 @@ interface HandwritingCanvasProps {
   totalCount?: number;
   projectName?: string;
   onRenameProject?: (name: string) => void;
+  tier?: string;
+  onUpgrade?: () => void;
   onClose?: () => void;
   allCharacterList?: { char: string; category: string; hasStrokes: boolean }[];
   onSelectCharacter?: (char: string) => void;
@@ -131,6 +144,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   totalCount = 0,
   projectName = "My Handwriting",
   onRenameProject,
+  tier = "free",
+  onUpgrade,
   onClose,
   allCharacterList,
   onSelectCharacter,
@@ -170,6 +185,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(projectName);
   const [mobileSheet, setMobileSheet] = useState<"brush" | "size" | "style" | "variant" | "more" | null>(null);
+  const [upgrade, setUpgrade] = useState<UpgradeCopy | null>(null);
+
+  const ent = useMemo(() => getEntitlements(tier), [tier]);
   const [variantToDelete, setVariantToDelete] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
@@ -181,6 +199,14 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const isEraser = toolMode === "eraser";
+
+  const proj: unknown = project ?? {};
+  const charsObj = (proj as { characters?: unknown })?.characters;
+  const allChars: CharacterData[] = Array.isArray(charsObj)
+    ? (charsObj as CharacterData[])
+    : typeof charsObj === "object" && charsObj !== null
+      ? Object.values(charsObj as Record<string, CharacterData>)
+      : [];
 
   const activeStrokes = useMemo(() => {
     if (activeVariant === -1) return strokes;
@@ -287,13 +313,20 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
   const addVariant = useCallback(() => {
     // Maximum 4 total per character: Main + up to 3 alternates.
-    if (variants.length >= 3) return;
+    if (!ent.canCreateVariant(variants.length)) {
+      if (!ent.isPro) {
+        setUpgrade(upgradeForVariants);
+      } else {
+        setValidationMsg("Maximum 4 variants per character.");
+      }
+      return;
+    }
     pushUndo();
     setVariants((prev) => [...prev, []]);
     setVariantStyles((prev) => [...prev, []]);
     setActiveVariant(variants.length);
     setIsDirty(true);
-  }, [pushUndo, variants.length]);
+  }, [ent, pushUndo, variants.length]);
 
   // Lock page scroll while the editor is open so no page scrollbar appears.
   useEffect(() => {
@@ -333,6 +366,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setShowQuality(false);
     setVariantToDelete(null);
     setValidationMsg(null);
+    setUpgrade(null);
     setIsDirty(false);
   }, [character]);
 
@@ -393,6 +427,59 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     performSave().catch(() => {});
   }, [performSave, requireContent]);
 
+  // ---- Plan-gated selections: one choke point per control so the desktop
+  // panel and the mobile sheets share identical entitlement behavior. ----
+  const trySelectBrush = useCallback(
+    (b: BrushType): boolean => {
+      if (!ent.canUseBrush(b)) {
+        setUpgrade(upgradeForBrush(b));
+        return false;
+      }
+      setBrushType(b);
+      return true;
+    },
+    [ent],
+  );
+
+  const trySelectSize = useCallback(
+    (s: StrokeSize): boolean => {
+      if (!ent.canUseStrokeSize(s)) {
+        setUpgrade(upgradeForStrokeSize(s));
+        return false;
+      }
+      setStrokeSize(s);
+      return true;
+    },
+    [ent],
+  );
+
+  const trySelectStyle = useCallback(
+    (s: CanvasStyle): boolean => {
+      if (!ent.canUseCanvasStyle(s)) {
+        setUpgrade(upgradeForCanvasStyle(s));
+        return false;
+      }
+      setCanvasStyle(s);
+      return true;
+    },
+    [ent],
+  );
+
+  const charHasStrokes = useCallback(
+    (ch: string): boolean => {
+      const listed = allCharacterList?.find((c) => c.char === ch);
+      if (listed) return listed.hasStrokes;
+      const cd = allChars.find((c: unknown) => (c as CharacterData).char === ch);
+      return !!((cd as { completed?: boolean } | undefined)?.completed || (cd?.strokes?.length ?? 0) > 0);
+    },
+    [allCharacterList, allChars],
+  );
+
+  const isLockedChar = useCallback(
+    (ch: string) => !ent.isCharacterAllowed(ch, charHasStrokes(ch)),
+    [charHasStrokes, ent],
+  );
+
   const smartSaveAndNext = useCallback(async () => {
     if (!requireContent()) return;
     try {
@@ -414,6 +501,37 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       }
     },
     [performSave],
+  );
+
+  const selectChar = useCallback(
+    (ch: string) => {
+      if (isLockedChar(ch)) {
+        // Persist current work first, then explain the limit.
+        saveAndGo(() => setUpgrade(upgradeForCharacters));
+        return;
+      }
+      saveAndGo(() => {
+        if (onSelectCharacter) {
+          onSelectCharacter(ch);
+        } else {
+          window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
+        }
+      });
+    },
+    [isLockedChar, onSelectCharacter, saveAndGo],
+  );
+
+  const jumpToCategoryFirst = useCallback(
+    (key: "upper" | "lower" | "nums" | "symbols", group: string[]) => {
+      if (!ent.isPro && key !== "upper") {
+        setUpgrade(upgradeForCharacters);
+        return;
+      }
+      if (group[0]) {
+        selectChar(group[0]);
+      }
+    },
+    [ent, selectChar],
   );
 
   const runQualityCheck = useCallback(() => {
@@ -873,13 +991,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const isCompleted =
     strokes.length > 0 || variants.some((v) => v.length > 0);
   const category = character.category || "uppercase";
-  const proj: any = project || {};
-  const charsObj = proj?.characters;
-  const allChars: CharacterData[] = Array.isArray(charsObj)
-    ? charsObj
-    : typeof charsObj === "object" && charsObj !== null
-      ? Object.values(charsObj)
-      : [];
 
   const categoryGroups = useMemo(() => {
     const upper = allChars.filter((c: any) => (c.category || "uppercase") === "uppercase");
@@ -918,43 +1029,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const alphaLower = Array.from("abcdefghijklmnopqrstuvwxyz");
   const digits = Array.from("0123456789");
   const symbolsList = ["!", "@", "#", "$", "%", "&", "*", "(", ")", "-", "_", "+", "=", "{", "}", "[", "]", "|", "\\", "/", "?", "<", ">", ",", ".", ";", ":", "'", '"'];
-
-  const renderCharGrid = (list: string[]) => (
-    <div className="grid grid-cols-6 gap-1.5 px-3 pb-2">
-      {list.map((ch) => {
-        const charData = allChars.find((c: any) => c.char === ch);
-        const completed = (charData as any)?.completed || (charData?.strokes?.length ?? 0) > 0;
-        const isCurrent = character.char === ch;
-        return (
-          <button
-            key={ch}
-            type="button"
-            onClick={() => {
-              saveAndGo(() => {
-                if (onSelectCharacter) {
-                  onSelectCharacter(ch);
-                } else {
-                  window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
-                }
-              });
-            }}
-            className={`relative flex h-8 w-8 items-center justify-center rounded-lg border text-sm font-medium transition-all ${
-              isCurrent
-                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                : completed
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300"
-                  : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50"
-            }`}
-          >
-            {ch}
-            {completed && !isCurrent ? (
-              <Check className="absolute -right-0.5 -top-0.5 h-3 w-3 text-emerald-600" />
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
-  );
 
   return (
     <div
@@ -1086,9 +1160,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               <X className="h-4 w-4" />
             </button>
           ) : null}
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 shadow-sm">
+          <div
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold shadow-sm ${
+              ent.isPro
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-neutral-200 bg-neutral-50 text-neutral-600"
+            }`}
+          >
             <Crown className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Pro Plan</span>
+            <span className="hidden sm:inline">{ent.isPro ? "Pro Plan" : "Free Plan"}</span>
           </div>
         </div>
       </header>
@@ -1111,12 +1191,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 type="button"
                 onClick={() => {
                   const group = cat.key === "upper" ? alpha : cat.key === "lower" ? alphaLower : cat.key === "nums" ? digits : symbolsList;
-                  if (group[0]) {
-                    saveAndGo(() => {
-                      if (onSelectCharacter) onSelectCharacter(group[0]);
-                      else window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: group[0] }));
-                    });
-                  }
+                  jumpToCategoryFirst(cat.key, group);
                 }}
                 className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-center transition-all ${
                   cat.active ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700"
@@ -1131,29 +1206,29 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             ))}
           </div>
           <div className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
-              const cd = allChars.find((c: unknown) => (c as CharacterData).char === ch);
-              const done = (cd as { completed?: boolean } | undefined)?.completed || (cd?.strokes?.length ?? 0) > 0;
-              const cur = character.char === ch;
-              return (
-                <button
-                  key={ch}
-                  type="button"
-                  onClick={() => {
-                    saveAndGo(() => {
-                      if (onSelectCharacter) onSelectCharacter(ch);
-                      else window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
-                    });
-                  }}
-                  className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-sm font-medium transition-all ${
-                    cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700"
-                  }`}
-                >
-                  {ch}
-                  {done ? <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-blue-600 ring-1 ring-white" /> : null}
-                </button>
-              );
-            })}
+                {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
+                  const cd = allChars.find((c: unknown) => (c as CharacterData).char === ch);
+                  const done = (cd as { completed?: boolean } | undefined)?.completed || (cd?.strokes?.length ?? 0) > 0;
+                  const cur = character.char === ch;
+                  const locked = !ent.isCharacterAllowed(ch, done);
+                  return (
+                    <button
+                      key={ch}
+                      type="button"
+                      onClick={() => selectChar(ch)}
+                      className={`relative flex h-7 w-7 items-center justify-center rounded-md border text-xs font-medium transition-all ${
+                        cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+                      }`}
+                    >
+                      {ch}
+                      {locked ? (
+                        <Lock className="absolute bottom-1 left-1 h-2 w-2 text-neutral-400" />
+                      ) : done ? (
+                        <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-blue-600 ring-1 ring-white" />
+                      ) : null}
+                    </button>
+                  );
+                })}
           </div>
         </div>
         {/* Top row: sidebar + canvas + tools */}
@@ -1174,14 +1249,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   key={cat.key}
                   type="button"
                   onClick={() => {
-                    // Switch category without forcing scroll; preserve first char selection if desired
                     const group = cat.key === "upper" ? alpha : cat.key === "lower" ? alphaLower : cat.key === "nums" ? digits : symbolsList;
-                    if (group[0]) {
-                      saveAndGo(() => {
-                        if (onSelectCharacter) onSelectCharacter(group[0]);
-                        else window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: group[0] }));
-                      });
-                    }
+                    jumpToCategoryFirst(cat.key, group);
                   }}
                   className={`group flex items-center justify-between rounded-xl border p-2.5 text-left transition-all hover:shadow-sm ${
                     cat.active ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : `${cat.bg} ${cat.border}`
@@ -1222,22 +1291,22 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   const cd = allChars.find((c: any) => c.char === ch);
                   const done = (cd as any)?.completed || (cd?.strokes?.length ?? 0) > 0;
                   const cur = character.char === ch;
+                  const locked = !ent.isCharacterAllowed(ch, done);
                   return (
                     <button
                       key={ch}
                       type="button"
-                      onClick={() => {
-                        saveAndGo(() => {
-                          if (onSelectCharacter) onSelectCharacter(ch);
-                          else window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
-                        });
-                      }}
+                      onClick={() => selectChar(ch)}
                       className={`relative flex h-7 w-7 items-center justify-center rounded-md border text-xs font-medium transition-all ${
                         cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
                     >
                       {ch}
-                      {done ? <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-blue-600 ring-1 ring-white" /> : null}
+                      {locked ? (
+                        <Lock className="absolute bottom-1 left-1 h-2 w-2 text-neutral-400" />
+                      ) : done ? (
+                        <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-blue-600 ring-1 ring-white" />
+                      ) : null}
                     </button>
                   );
                 })}
@@ -1385,7 +1454,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     <button
                       key={b}
                       type="button"
-                      onClick={() => setBrushType(b)}
+                      onClick={() => trySelectBrush(b)}
                       className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs transition-colors ${
                         brushType === b ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
@@ -1405,7 +1474,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     <button
                       key={s}
                       type="button"
-                      onClick={() => setStrokeSize(s)}
+                      onClick={() => trySelectSize(s)}
                       className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs capitalize transition-colors ${
                         strokeSize === s ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
@@ -1429,7 +1498,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     <button
                       key={style}
                       type="button"
-                      onClick={() => setCanvasStyle(style)}
+                      onClick={() => trySelectStyle(style)}
                       className={`flex items-center justify-center rounded-lg border px-2 py-1.5 text-xs capitalize transition-colors ${
                         canvasStyle === style ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
@@ -1661,7 +1730,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     key={b}
                     type="button"
                     onClick={() => {
-                      setBrushType(b);
+                      trySelectBrush(b);
                       setMobileSheet(null);
                     }}
                     className={`flex min-h-[52px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
@@ -1681,7 +1750,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     key={s}
                     type="button"
                     onClick={() => {
-                      setStrokeSize(s);
+                      trySelectSize(s);
                       setMobileSheet(null);
                     }}
                     className={`flex min-h-[52px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
@@ -1705,7 +1774,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     key={style}
                     type="button"
                     onClick={() => {
-                      setCanvasStyle(style);
+                      trySelectStyle(style);
                       setMobileSheet(null);
                     }}
                     className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
@@ -1837,6 +1906,14 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
         </div>
       ) : null}
+
+      <UpgradeModal
+        open={!!upgrade}
+        feature={upgrade?.feature ?? ""}
+        description={upgrade?.description ?? ""}
+        onClose={() => setUpgrade(null)}
+        onUpgrade={onUpgrade}
+      />
 
       {showQuality && quality ? (
         <div className="absolute bottom-4 left-1/2 z-20 w-[min(92vw,320px)] -translate-x-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">

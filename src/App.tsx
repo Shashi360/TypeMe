@@ -332,6 +332,8 @@ export default function App() {
               project={activeProject}
               onUpdateCharacter={handleUpdateCharacter}
               onRenameProject={(name) => handleUpdateProjectName(activeProject.id, name)}
+              tier={user?.tier ?? 'free'}
+              onUpgrade={() => setCurrentView('pricing')}
               onBackToDashboard={() => setCurrentView(user ? 'dashboard' : 'landing')}
               onOpenReview={() => setCurrentView('review')}
               onOpenPreview={() => setCurrentView('preview')}
@@ -345,6 +347,8 @@ export default function App() {
               onUpdateCharacter={handleUpdateCharacter}
               onBackToWorkspace={() => setCurrentView('workspace')}
               onContinueToPreview={() => setCurrentView('preview')}
+              tier={user?.tier ?? 'free'}
+              onUpgrade={() => setCurrentView('pricing')}
             />
           )}
 
@@ -363,6 +367,8 @@ export default function App() {
               onCreateAnother={handleStartNewFont}
               onBackToDashboard={() => setCurrentView(user ? 'dashboard' : 'landing')}
               onIncrementDownload={handleIncrementDownload}
+              tier={user?.tier ?? 'free'}
+              onUpgrade={() => setCurrentView('pricing')}
             />
           )}
 
@@ -500,6 +506,15 @@ export default function App() {
           project={activeProject}
           onClose={() => setGenerationModalOpen(false)}
           onGenerationComplete={handleGenerationComplete}
+          onReview={() => {
+            setGenerationModalOpen(false);
+            setCurrentView('review');
+          }}
+          tier={user?.tier ?? 'free'}
+          onUpgrade={() => {
+            setGenerationModalOpen(false);
+            setCurrentView('pricing');
+          }}
         />
       )}
     </div>

@@ -6,6 +6,12 @@ import {
   Stroke,
 } from '../types';
 import {
+  getEntitlements,
+  upgradeForCharacters,
+  type UpgradeCopy,
+} from '../utils/entitlements';
+import { UpgradeModal } from './UpgradeModal';
+import {
   UPPERCASE_CHARS,
   LOWERCASE_CHARS,
   NUMBER_CHARS,
@@ -23,6 +29,7 @@ import {
   ArrowLeft,
   FileCheck,
   Download,
+  Lock,
 } from 'lucide-react';
 
 interface WorkspaceViewProps {
@@ -35,6 +42,8 @@ interface WorkspaceViewProps {
     variantStyles?: { brush: string; size: string }[][],
   ) => void;
   onRenameProject?: (name: string) => void;
+  tier?: string;
+  onUpgrade?: () => void;
   onBackToDashboard: () => void;
   onOpenReview: () => void;
   onOpenPreview: () => void;
@@ -45,6 +54,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   project,
   onUpdateCharacter,
   onRenameProject,
+  tier = "free",
+  onUpgrade,
   onBackToDashboard,
   onOpenReview,
   onOpenPreview,
@@ -72,20 +83,41 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const allDefs = [...UPPERCASE_CHARS, ...LOWERCASE_CHARS, ...NUMBER_CHARS, ...SYMBOL_CHARS];
 
+  const [upgrade, setUpgrade] = useState<UpgradeCopy | null>(null);
+  const ent = getEntitlements(tier);
+
+  const charDataFor = (def: CharDefinition): CharacterData => {
+    return (
+      project.characters[def.char] || {
+        char: def.char,
+        unicode: def.unicode,
+        category: def.category,
+        strokes: [],
+        qualityStatus: 'empty',
+      }
+    );
+  };
+
+  const isLockedDef = (def: CharDefinition): boolean => {
+    const data = project.characters[def.char];
+    const hasStrokes = !!((data as { strokes?: Stroke[] } | undefined)?.strokes?.length);
+    return !ent.isCharacterAllowed(def.char, hasStrokes);
+  };
+
+  const openCharDef = (def: CharDefinition) => {
+    if (isLockedDef(def)) {
+      setUpgrade(upgradeForCharacters);
+      return;
+    }
+    setEditingChar(charDataFor(def));
+  };
+
   // Handle previous/next inside canvas
   const handleNextChar = () => {
     if (!editingChar) return;
     const currentIndex = allDefs.findIndex((d) => d.char === editingChar.char);
     if (currentIndex >= 0 && currentIndex < allDefs.length - 1) {
-      const nextDef = allDefs[currentIndex + 1];
-      const charData = project.characters[nextDef.char] || {
-        char: nextDef.char,
-        unicode: nextDef.unicode,
-        category: nextDef.category,
-        strokes: [],
-        qualityStatus: 'empty',
-      };
-      setEditingChar(charData);
+      openCharDef(allDefs[currentIndex + 1]);
     }
   };
 
@@ -93,29 +125,14 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     if (!editingChar) return;
     const currentIndex = allDefs.findIndex((d) => d.char === editingChar.char);
     if (currentIndex > 0) {
-      const prevDef = allDefs[currentIndex - 1];
-      const charData = project.characters[prevDef.char] || {
-        char: prevDef.char,
-        unicode: prevDef.unicode,
-        category: prevDef.category,
-        strokes: [],
-        qualityStatus: 'empty',
-      };
-      setEditingChar(charData);
+      openCharDef(allDefs[currentIndex - 1]);
     }
   };
 
   const handleSelectChar = (char: string) => {
     const def = allDefs.find((d) => d.char === char);
     if (!def) return;
-    const charData = project.characters[def.char] || {
-      char: def.char,
-      unicode: def.unicode,
-      category: def.category,
-      strokes: [],
-      qualityStatus: 'empty',
-    };
-    setEditingChar(charData);
+    openCharDef(def);
   };
 
   const characterListSummary = allDefs.map((def) => {
@@ -252,11 +269,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           const hasStrokes = charData.strokes && charData.strokes.length > 0;
           const variantCount = charData.variants ? charData.variants.length : 0;
 
+          const locked = !ent.isCharacterAllowed(def.char, !!hasStrokes);
           return (
             <button
               type="button"
               key={def.char}
-              onClick={() => setEditingChar(charData)}
+              onClick={() => openCharDef(def)}
               aria-label={
                 hasStrokes
                   ? `Edit ${def.char}, ${charData.strokes.length} strokes`
@@ -274,7 +292,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   {def.char}
                 </span>
 
-                {hasStrokes ? (
+                {locked ? (
+                  <Lock className="w-3 h-3 text-neutral-400" />
+                ) : hasStrokes ? (
                   charData.qualityStatus === 'warning' ? (
                     <AlertTriangle className="w-3 h-3 text-amber-500" />
                   ) : (
@@ -367,10 +387,20 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           onSelectCharacter={handleSelectChar}
           projectName={project.name}
           onRenameProject={onRenameProject}
+          tier={tier}
+          onUpgrade={onUpgrade}
           completedCount={completedChars}
           totalCount={totalChars}
         />
       )}
+
+      <UpgradeModal
+        open={!!upgrade}
+        feature={upgrade?.feature ?? ""}
+        description={upgrade?.description ?? ""}
+        onClose={() => setUpgrade(null)}
+        onUpgrade={onUpgrade}
+      />
     </div>
   );
 };
