@@ -789,6 +789,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   key={cat.key}
                   type="button"
                   onClick={() => {
+                    // Switch category without forcing scroll; preserve first char selection if desired
                     const group = cat.key === "upper" ? alpha : cat.key === "lower" ? alphaLower : cat.key === "nums" ? digits : symbolsList;
                     if (group[0]) {
                       saveAndGo(() => {
@@ -815,7 +816,40 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               ))}
             </div>
 
-            {/* Grid removed - using category tabs to switch letters */}
+            {/* Character grid for selected category */}
+            <div className="flex min-h-0 flex-1 flex-col border-t border-[#E8E8E3]">
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
+                  {category === "uppercase" ? "A–Z" : category === "lowercase" ? "a–z" : category === "numbers" ? "0–9" : "Symbols"}
+                </span>
+                <span className="text-[10px] text-neutral-400">{completedCount}/{totalCount}</span>
+              </div>
+              <div className="flex flex-1 flex-wrap content-start justify-start gap-1 overflow-hidden px-3 pb-3">
+                {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
+                  const cd = allChars.find((c: any) => c.char === ch);
+                  const done = (cd as any)?.completed || (cd?.strokes?.length ?? 0) > 0;
+                  const cur = character.char === ch;
+                  return (
+                    <button
+                      key={ch}
+                      type="button"
+                      onClick={() => {
+                        saveAndGo(() => {
+                          if (onSelectCharacter) onSelectCharacter(ch);
+                          else window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
+                        });
+                      }}
+                      className={`relative flex h-7 w-7 items-center justify-center rounded-md border text-xs font-medium transition-all ${
+                        cur ? "border-blue-600 bg-blue-600 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+                      }`}
+                    >
+                      {ch}
+                      {done && !cur ? <Check className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 text-emerald-600" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Bottom motivational removed as requested */}
           </aside>
@@ -854,7 +888,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 {/* Canvas stage */}
                 <div
                   ref={containerRef}
-                  className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
+                  className="relative flex min-h-0 w-full flex-1 items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
+                  style={{ overflow: "hidden" }}
                 >
                   {isEraser && eraserPos ? (
                     <div
@@ -888,7 +923,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </main>
 
           {/* Right Tool Panel */}
-          <aside className="hidden h-full w-full min-h-0 flex-col gap-2 overflow-hidden sm:gap-3 lg:flex lg:flex-col">
+          <aside className="hidden h-full w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:flex-col" style={{ overflow: "hidden" }}>
             <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm">
               {/* Pen/Eraser */}
               <div className="flex flex-col gap-2 p-3">
