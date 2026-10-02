@@ -1,20 +1,26 @@
 import {
   AlertCircle,
+  AlignJustify,
   ArrowRight,
+  Brush,
   Check,
   ChevronLeft,
   ChevronRight,
   Crown,
   Edit2,
   Eraser,
+  Grip,
   Maximize2,
   Minimize2,
+  MoreHorizontal,
   PenTool,
   RotateCcw,
   RotateCw,
-  SlidersHorizontal,
+  Ruler,
   Sparkles,
+  Square,
   Trash2,
+  Type,
   X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -163,7 +169,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [validationMsg, setValidationMsg] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(projectName);
-  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [mobileSheet, setMobileSheet] = useState<"brush" | "size" | "style" | "variant" | "more" | null>(null);
   const [variantToDelete, setVariantToDelete] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
@@ -888,6 +894,26 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     return { done, total: group.length };
   };
 
+  const brushPreview = (b: BrushType) => (
+    <div className="flex h-3 w-full items-center justify-center">
+      {b === "gel" && <div className="h-[3px] w-14 rounded-full bg-current" />}
+      {b === "fountain" && (
+        <svg viewBox="0 0 56 12" className="h-3 w-14" aria-hidden="true">
+          <path d="M3 8 C 16 2, 38 2, 53 7" stroke="currentColor" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+        </svg>
+      )}
+      {b === "marker" && <div className="h-2 w-14 rounded-full bg-current opacity-70 blur-[0.4px]" />}
+      {b === "pencil" && <div className="h-[2px] w-14 bg-current opacity-60" style={{ backgroundImage: "repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px)" }} />}
+    </div>
+  );
+
+  const sheetTitle =
+    mobileSheet === "brush" ? "Brush"
+    : mobileSheet === "size" ? "Stroke Size"
+    : mobileSheet === "style" ? "Canvas Style"
+    : mobileSheet === "variant" ? "Variant"
+    : "More";
+
   const alpha = Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
   const alphaLower = Array.from("abcdefghijklmnopqrstuvwxyz");
   const digits = Array.from("0123456789");
@@ -1068,9 +1094,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       </header>
 
       {/* Main workspace */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 p-2 sm:gap-3 sm:p-3 lg:gap-4 lg:p-4">
-        {/* Mobile / tablet character navigator: 4 tabs + letters with saved dots */}
-        <div className="flex shrink-0 flex-col gap-1.5 rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm lg:hidden">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-2 sm:gap-3 sm:p-3 lg:gap-4 lg:overflow-hidden lg:p-4">
+        {/* Mobile character navigator: 4 tabs + letters with saved dots (tablet uses sidebar) */}
+        <div className="flex shrink-0 flex-col gap-1.5 rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm md:hidden">
           <div className="grid grid-cols-4 gap-1.5">
             {(
               [
@@ -1131,9 +1157,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
         </div>
         {/* Top row: sidebar + canvas + tools */}
-        <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden sm:gap-3 md:grid-cols-[minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_220px] xl:grid-cols-[260px_minmax(0,1fr)_240px] lg:px-2">
-          {/* Left Sidebar */}
-          <aside className="hidden h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm lg:flex">
+        <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden sm:gap-3 md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_220px] xl:grid-cols-[260px_minmax(0,1fr)_240px] lg:px-2">
+          {/* Left Sidebar (tablet + desktop) */}
+          <aside className="hidden h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm md:flex">
             {/* Categories */}
             <div className="flex flex-col gap-2 p-3">
               {(
@@ -1222,10 +1248,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </aside>
 
           {/* Center Canvas */}
-          <main className="flex min-h-[320px] min-w-0 flex-1 flex-col items-center justify-center sm:min-h-[420px] lg:min-h-0">
+          <main className="flex min-h-[300px] min-w-0 flex-1 flex-col items-center justify-center sm:min-h-[400px] md:min-h-[440px] lg:min-h-0">
             <div className="flex w-full min-w-0 max-w-full flex-1 flex-col items-center rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,920px)] xl:max-w-[min(100%,980px)] 2xl:max-w-[min(100%,1040px)]">
               {/* Canvas header */}
-              <div className="relative flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
+              <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
                 <div className="flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900 shadow-sm sm:h-12 sm:w-12 sm:text-3xl">
                     {character.char}
@@ -1236,15 +1262,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     </span>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileToolsOpen((o) => !o)}
-                  className={`absolute right-3 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors lg:hidden ${
-                    mobileToolsOpen ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
-                  }`}
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" /> Tools
-                </button>
               </div>
 
               {/* Canvas card */}
@@ -1315,7 +1332,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
           {/* Right Tool Panel */}
           <aside
-            className={`${mobileToolsOpen ? "flex" : "hidden"} h-auto w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:h-full lg:flex-col`}
+            className="hidden h-full w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:flex-col"
             style={{ overflow: "hidden" }}
           >
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -1374,16 +1391,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       }`}
                     >
                       <span className="capitalize">{b}</span>
-                      <div className="flex h-3 w-full items-center justify-center">
-                        {b === "gel" && <div className="h-[3px] w-14 rounded-full bg-current" />}
-                        {b === "fountain" && (
-                          <svg viewBox="0 0 56 12" className="h-3 w-14" aria-hidden="true">
-                            <path d="M3 8 C 16 2, 38 2, 53 7" stroke="currentColor" strokeWidth="2.6" fill="none" strokeLinecap="round" />
-                          </svg>
-                        )}
-                        {b === "marker" && <div className="h-2 w-14 rounded-full bg-current opacity-70 blur-[0.4px]" />}
-                        {b === "pencil" && <div className="h-[2px] w-14 bg-current opacity-60" style={{ backgroundImage: "repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px)" }} />}
-                      </div>
+                      {brushPreview(b)}
                     </button>
                   ))}
                 </div>
@@ -1492,14 +1500,75 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
         {/* Character strip removed as requested */}
 
+        {/* Mobile / tablet compact toolbar (canvas stays the hero; details live in sheets) */}
+        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onClick={() => setToolMode("pen")}
+            className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition-colors ${
+              toolMode === "pen" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+            }`}
+          >
+            <PenTool className="h-4 w-4" /> Pen
+          </button>
+          <button
+            type="button"
+            onClick={() => setToolMode("eraser")}
+            className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition-colors ${
+              toolMode === "eraser" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+            }`}
+          >
+            <Eraser className="h-4 w-4" /> Eraser
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileSheet("brush")}
+            className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium capitalize transition-colors ${
+              mobileSheet === "brush" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+            }`}
+          >
+            <Brush className="h-4 w-4" /> {brushType}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileSheet("size")}
+            className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium capitalize transition-colors ${
+              mobileSheet === "size" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+            }`}
+          >
+            <Ruler className="h-4 w-4" /> {strokeSize}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileSheet("style")}
+            className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium capitalize transition-colors ${
+              mobileSheet === "style" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+            }`}
+          >
+            <AlignJustify className="h-4 w-4" /> {canvasStyle}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileSheet("more")}
+            className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition-colors ${
+              mobileSheet === "more" || mobileSheet === "variant" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+            }`}
+          >
+            <MoreHorizontal className="h-4 w-4" /> More
+          </button>
+        </div>
+
         {/* Bottom Action Bar */}
-        <div className="flex shrink-0 flex-col gap-2 rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-3 sm:py-2.5">
+        <div
+          className="flex shrink-0 flex-col gap-2 rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-3 sm:py-2.5"
+          style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        >
           <div className="flex items-center justify-center gap-1.5 sm:justify-start">
             <button
               type="button"
               onClick={undo}
               disabled={undoStack.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <RotateCcw className="h-3.5 w-3.5" /> Undo
             </button>
@@ -1507,7 +1576,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               type="button"
               onClick={redo}
               disabled={redoStack.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <RotateCw className="h-3.5 w-3.5" /> Redo
             </button>
@@ -1515,14 +1584,14 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               type="button"
               onClick={clear}
               disabled={activeStrokes.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Trash2 className="h-3.5 w-3.5" /> Clear
             </button>
             <button
               type="button"
               onClick={runQualityCheck}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300"
+              className="hidden min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 sm:inline-flex"
             >
               Quality
             </button>
@@ -1540,7 +1609,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               <button
                 type="button"
                 onClick={() => saveAndGo(() => onPrevious())}
-                className="inline-flex items-center gap-1 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300"
+                className="hidden min-h-[44px] items-center gap-1 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 sm:inline-flex"
               >
                 <ChevronLeft className="h-3.5 w-3.5" /> Prev
               </button>
@@ -1548,20 +1617,226 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             <button
               type="button"
               onClick={handleSave}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-3.5 py-1.5 text-xs font-semibold text-neutral-900 transition-colors hover:bg-neutral-50"
+              className="hidden min-h-[44px] items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-3.5 py-1.5 text-xs font-semibold text-neutral-900 transition-colors hover:bg-neutral-50 sm:inline-flex"
             >
               <Check className="h-3.5 w-3.5" /> Save
             </button>
             <button
               type="button"
               onClick={smartSaveAndNext}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-800"
+              className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-neutral-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-800 sm:flex-none"
             >
               Save & Next <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
       </div>
+
+      {/* Mobile / tablet bottom sheets (same state + handlers as desktop panel) */}
+      {mobileSheet ? (
+        <div
+          className="fixed inset-0 z-[55] bg-neutral-900/30 lg:hidden"
+          onClick={() => setMobileSheet(null)}
+          aria-hidden="true"
+        />
+      ) : null}
+      {mobileSheet ? (
+        <div className="fixed inset-x-3 bottom-28 z-[60] rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-xl sm:inset-x-6 lg:hidden">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-neutral-900">{sheetTitle}</span>
+            <button
+              type="button"
+              aria-label="Close panel"
+              onClick={() => setMobileSheet(null)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E3] text-neutral-500"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="max-h-[46dvh] overflow-y-auto">
+            {mobileSheet === "brush" ? (
+              <div className="grid grid-cols-2 gap-2">
+                {(["gel", "fountain", "marker", "pencil"] as BrushType[]).map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => {
+                      setBrushType(b);
+                      setMobileSheet(null);
+                    }}
+                    className={`flex min-h-[52px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
+                      brushType === b ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+                    }`}
+                  >
+                    {b}
+                    {brushPreview(b)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {mobileSheet === "size" ? (
+              <div className="grid grid-cols-3 gap-2">
+                {(["fine", "regular", "bold"] as StrokeSize[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      setStrokeSize(s);
+                      setMobileSheet(null);
+                    }}
+                    className={`flex min-h-[52px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
+                      strokeSize === s ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+                    }`}
+                  >
+                    {s}
+                    <div className="flex h-3 w-full items-center justify-center">
+                      {s === "fine" && <span className="text-lg leading-none">·</span>}
+                      {s === "regular" && <div className="h-0.5 w-8 rounded-full bg-current" />}
+                      {s === "bold" && <div className="h-1.5 w-8 rounded-full bg-current" />}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {mobileSheet === "style" ? (
+              <div className="grid grid-cols-2 gap-2">
+                {(["typography", "notebook", "dots", "blank"] as CanvasStyle[]).map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    onClick={() => {
+                      setCanvasStyle(style);
+                      setMobileSheet(null);
+                    }}
+                    className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
+                      canvasStyle === style ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
+                    }`}
+                  >
+                    {style === "typography" ? <Type className="h-4 w-4" /> : null}
+                    {style === "notebook" ? <AlignJustify className="h-4 w-4" /> : null}
+                    {style === "dots" ? <Grip className="h-4 w-4" /> : null}
+                    {style === "blank" ? <Square className="h-4 w-4" /> : null}
+                    {style}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {mobileSheet === "variant" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    switchVariant(-1);
+                    setMobileSheet(null);
+                  }}
+                  className={`inline-flex min-h-[44px] items-center justify-center rounded-xl border px-3 text-xs font-medium ${
+                    activeVariant === -1 ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white"
+                  }`}
+                >
+                  Main
+                </button>
+                {variants.map((v, i) => (
+                  <div key={i} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        switchVariant(i);
+                        setMobileSheet(null);
+                      }}
+                      className={`inline-flex min-h-[44px] w-11 items-center justify-center rounded-xl border text-xs font-medium ${
+                        activeVariant === i ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white"
+                      }`}
+                    >
+                      {i + 1}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete variant ${i + 1}`}
+                      onClick={() => {
+                        if ((v ?? []).length === 0) {
+                          removeVariant(i);
+                        } else {
+                          setVariantToDelete(i);
+                        }
+                        setMobileSheet(null);
+                      }}
+                      className="absolute -right-1 -top-1 inline-flex h-5 w-5 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-[11px] text-rose-700"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {variants.length < 3 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addVariant();
+                      setMobileSheet(null);
+                    }}
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-dashed border-[#E8E8E3] bg-white px-3 text-xs font-medium text-neutral-600"
+                  >
+                    + Add
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {mobileSheet === "more" ? (
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMobileSheet("variant")}
+                  className="inline-flex min-h-[44px] items-center justify-between rounded-xl border border-[#E8E8E3] bg-white px-3 text-xs font-medium text-neutral-700"
+                >
+                  <span>Variant: {activeVariant === -1 ? "Main" : `Alternate ${activeVariant + 1}`}</span>
+                  <ChevronRight className="h-4 w-4 text-neutral-400" />
+                </button>
+                {hasPrevious && onPrevious ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileSheet(null);
+                      saveAndGo(() => onPrevious());
+                    }}
+                    className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-[#E8E8E3] bg-white px-3 text-xs font-medium text-neutral-700"
+                  >
+                    <ChevronLeft className="h-4 w-4" /> Previous character
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileSheet(null);
+                    handleSave();
+                  }}
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-neutral-900 bg-white px-3 text-xs font-semibold text-neutral-900"
+                >
+                  <Check className="h-4 w-4" /> Save character
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileSheet(null);
+                    runQualityCheck();
+                  }}
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-[#E8E8E3] bg-white px-3 text-xs font-medium text-neutral-700"
+                >
+                  Quality check
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileSheet(null);
+                    setShowShortcuts(true);
+                  }}
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-[#E8E8E3] bg-white px-3 text-xs font-medium text-neutral-700"
+                >
+                  Keyboard shortcuts
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {showQuality && quality ? (
         <div className="absolute bottom-4 left-1/2 z-20 w-[min(92vw,320px)] -translate-x-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
