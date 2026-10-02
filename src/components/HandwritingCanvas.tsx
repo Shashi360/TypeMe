@@ -788,6 +788,16 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 <button
                   key={cat.key}
                   type="button"
+                  onClick={() => {
+                    // Switch to first char in this category
+                    const group = cat.key === "upper" ? alpha : cat.key === "lower" ? alphaLower : cat.key === "nums" ? digits : symbolsList.slice(0,24);
+                    if (group[0]) {
+                      saveAndGo(() => {
+                        if (onSelectCharacter) onSelectCharacter(group[0]);
+                        else window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: group[0] }));
+                      });
+                    }
+                  }}
                   className={`group flex items-center justify-between rounded-xl border p-2.5 text-left transition-all hover:shadow-sm ${cat.bg} ${cat.border}`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -806,53 +816,25 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               ))}
             </div>
 
-            {/* Grid */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[#E8E8E3]">
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Characters</span>
-                <span className="text-[10px] text-neutral-400">{completedCount}/{totalCount}</span>
-              </div>
-              <div className="min-h-0 overflow-y-auto">
-                {renderCharGrid(alpha)}
-                {renderCharGrid(alphaLower)}
-                {renderCharGrid(digits)}
-                {renderCharGrid(symbolsList.slice(0, 24))}
-              </div>
-            </div>
+            {/* Grid removed - using category tabs to switch letters */}
 
-            {/* Bottom motivational */}
-            <div className="border-t border-[#E8E8E3] p-3">
-              <div className="relative flex flex-col items-start gap-1 rounded-xl border border-amber-200 bg-amber-50/90 p-3 shadow-sm">
-                <p className="font-serif text-sm leading-snug text-amber-950">
-                  Write each letter
-                  <br />
-                  with care.
-                </p>
-                <span aria-hidden="true" className="text-sm text-rose-400">♥</span>
-                <ArrowRight className="absolute bottom-2 right-2 h-4 w-4 text-amber-700" />
-              </div>
-            </div>
+            {/* Bottom motivational removed as requested */}
           </aside>
 
           {/* Center Canvas */}
           <main className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center">
-            <div className="flex w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,980px)] xl:max-w-[min(100%,1080px)] 2xl:max-w-[min(100%,1160px)]">
+            <div className="flex w-full min-w-0 max-w-full flex-1 flex-col rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,980px)] xl:max-w-[min(100%,1080px)] 2xl:max-w-[min(100%,1160px)]">
               {/* Canvas header */}
               <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
                 <div className="flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900 shadow-sm sm:h-12 sm:w-12 sm:text-3xl">
                     {character.char}
                   </span>
-                  <div className="flex flex-col items-center">
-                    <p className="text-[9px] uppercase tracking-[0.28em] text-neutral-400 sm:text-[10px]">
-                      Stay between the cap line and the baseline
-                    </p>
-                    {isCompleted ? (
-                      <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-800">
-                        <Check className="h-3 w-3" /> Completed
-                      </span>
-                    ) : null}
-                  </div>
+                  {isCompleted ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-800">
+                      <Check className="h-3 w-3" /> Completed
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
@@ -868,16 +850,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 ) : null}
 
                 {/* Top-right creative note */}
-                <div className="pointer-events-none absolute right-4 top-4 z-10 hidden rounded-2xl border border-amber-200 bg-amber-50/95 p-2.5 shadow-sm sm:block">
-                  <p className="font-serif text-xs leading-snug text-amber-950">
-                    Don't worry
-                    <br />
-                    about perfection!
-                    <br />
-                    Just be you.
-                  </p>
-                  <ArrowRight className="absolute -bottom-1 -right-1 h-4 w-4 rotate-45 text-amber-700" />
-                </div>
+                {/* Creative note removed as requested */}
 
                 {/* Canvas stage */}
                 <div
@@ -903,8 +876,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     onPointerUp={endDrawing}
                     onPointerCancel={handlePointerCancel}
                     onPointerLeave={handlePointerCancel}
-                    className="h-full w-full touch-none cursor-crosshair"
-                    style={{ touchAction: "none" }}
+                    className="touch-none cursor-crosshair"
+                    style={{ touchAction: "none", width: "100%", height: "100%" }}
                   />
                   {/* Bottom canvas message */}
                   <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
@@ -1073,50 +1046,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
               {/* Bottom decoration */}
               <div className="mt-auto border-t border-[#E8E8E3] p-3">
-                <div className="relative flex flex-col items-start rounded-xl border border-violet-200 bg-violet-50/90 p-3">
-                  <p className="font-serif text-sm leading-snug text-violet-950">Make it yours.</p>
-                  <Sparkles className="absolute bottom-2 right-2 h-4 w-4 text-violet-700" />
-                </div>
+                {/* Decorative note removed as requested */}
               </div>
             </div>
           </aside>
         </div>
 
-        {/* Bottom Character Strip */}
-        <div className="hidden shrink-0 flex-col gap-2 rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm md:flex md:p-3">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">All Characters</span>
-            <span className="text-[10px] text-neutral-400">{completedCount} / {totalCount}</span>
-          </div>
-          <div className="flex max-w-full flex-wrap items-center justify-center gap-0.5 overflow-x-auto md:gap-1">
-            {alpha.map((ch) => {
-              const cd = allChars.find((c) => c.char === ch);
-              const done = (cd as any)?.completed || (cd?.strokes?.length ?? 0) > 0;
-              const cur = character.char === ch;
-              return (
-                <button
-                  key={ch}
-                  type="button"
-                  onClick={() => {
-                    saveAndGo(() => {
-                      if (onSelectCharacter) {
-                        onSelectCharacter(ch);
-                      } else {
-                        window.dispatchEvent(new CustomEvent("typeme:select-char", { detail: ch }));
-                      }
-                    });
-                  }}
-                  className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-[11px] font-medium transition-all md:h-7 md:w-7 md:rounded-lg md:text-xs lg:h-8 lg:w-8 ${
-                    cur ? "border-blue-600 bg-blue-600 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
-                  }`}
-                >
-                  {ch}
-                  {done && !cur ? <Check className="absolute -right-0.5 -top-0.5 h-2 w-2 text-emerald-600 md:h-3 md:w-3" /> : null}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* Character strip removed as requested */}
 
         {/* Bottom Action Bar */}
         <div className="flex shrink-0 flex-col gap-2 rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-3 sm:py-2.5">
