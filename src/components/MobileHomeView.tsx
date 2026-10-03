@@ -115,6 +115,30 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
 
   useEffect(() => onInstallAvailabilityChange(() => setInstallable(isInstallAvailable())), []);
 
+  // Auto-show the install prompt once per session on phones/tablets: only
+  // when the browser reports a genuinely installable app, the user hasn't
+  // dismissed it (30 days), and we're not already inside the installed app.
+  useEffect(() => {
+    if (!installable || promptOpen || isStandalone() || isPromptDismissed()) return;
+    if (typeof window === "undefined" || window.innerWidth >= 1024) return;
+    let stored = false;
+    try {
+      stored = sessionStorage.getItem("tm-install-autoshow") === "1";
+    } catch {
+      stored = true;
+    }
+    if (stored) return;
+    const t = window.setTimeout(() => {
+      try {
+        sessionStorage.setItem("tm-install-autoshow", "1");
+      } catch {
+        // ignore
+      }
+      setPromptOpen(true);
+    }, 2500);
+    return () => window.clearTimeout(t);
+  }, [installable, promptOpen]);
+
   const handleCreate = async () => {
     if (!isStandalone() && installable && !isPromptDismissed()) {
       setPromptOpen(true);
@@ -302,7 +326,7 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
                   <p className="text-[11px] text-neutral-500">A smoother handwriting experience on your device.</p>
                 </div>
               </div>
-              <button type="button" aria-label="Dismiss" onClick={() => setPromptOpen(false)} className="text-neutral-400 hover:text-neutral-700">
+              <button type="button" aria-label="Dismiss" onClick={() => { try { sessionStorage.setItem("tm-install-autoshow", "1"); } catch { /* ignore */ } setPromptOpen(false); }} className="text-neutral-400 hover:text-neutral-700">
                 <X className="h-4 w-4" />
               </button>
             </div>

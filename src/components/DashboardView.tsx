@@ -40,6 +40,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [sortBy, setSortBy] = useState<'recent' | 'completion' | 'name'>('recent');
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editNameValue, setEditNameValue] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<FontProject | null>(null);
 
   // Compute metrics across projects
   const myFontsCount = Math.max(projects.length, 3);
@@ -330,9 +331,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <Copy className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => onDeleteProject(project.id)}
+                        onClick={() => setPendingDelete(project)}
                         className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                         title="Delete font"
+                        aria-label={`Delete ${project.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -344,6 +346,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      {pendingDelete ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 p-4 backdrop-blur-sm sm:items-center"
+          onClick={() => setPendingDelete(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Delete ${pendingDelete.name}`}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50">
+              <Trash2 className="h-5 w-5 text-rose-600" />
+            </div>
+            <h3 className="mt-3 font-serif text-xl font-bold text-neutral-900">Delete this font?</h3>
+            <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+              “{pendingDelete.name}” and all its handwriting will be permanently removed. This cannot be undone.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteProject(pendingDelete.id);
+                  setPendingDelete(null);
+                }}
+                className="inline-flex min-h-[48px] w-full items-center justify-center rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-rose-700"
+              >
+                Delete font
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                className="inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-50"
+              >
+                Keep it
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
