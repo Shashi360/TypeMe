@@ -24,6 +24,7 @@ import { StyleExplorerView } from './components/StyleExplorerView';
 import LegalView from './components/LegalView';
 import { unregisterFontUrl } from './utils/fontGenerator';
 import { ensureSupabaseSession } from './utils/supabaseSession';
+import { migrateLocalProjectsToSupabase } from './utils/db';
 
 export default function App() {
   // User state
@@ -196,6 +197,9 @@ export default function App() {
   // Auth handler
   const handleAuthSuccess = (authenticatedUser: User, isNewUser: boolean) => {
     setUser(authenticatedUser);
+    // One-time local → Supabase claim in the background. Never blocks login,
+    // never deletes local data, no-ops entirely while Supabase has no session.
+    migrateLocalProjectsToSupabase(projects).catch(() => {});
     if (isNewUser) {
       setOnboardingModalOpen(true);
     } else {
