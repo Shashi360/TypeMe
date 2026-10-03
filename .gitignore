@@ -10,3 +10,4 @@ coverage/
 !.env.example
 .tmp-shots/
 test-results/
+probe-tok.txt
