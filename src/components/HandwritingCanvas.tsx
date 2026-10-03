@@ -1232,64 +1232,47 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         {/* Center — project name (editable) */}
         <div className="absolute left-1/2 top-1/2 flex max-w-[40vw] -translate-x-1/2 -translate-y-1/2 items-center">
           {editingName ? (
-            <div
-              className="tm-fade fixed inset-0 z-[65] flex items-center justify-center bg-neutral-900/40 p-4"
-              onClick={() => {
-                setNameDraft(projectName);
-                setEditingName(false);
-              }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Rename project"
-            >
-              <div
-                className="tm-pop w-full max-w-xs rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
+            <div className="flex items-center gap-1 rounded-full border border-neutral-300 bg-white px-2 py-1 shadow-sm">
+              <input
+                value={nameDraft}
+                autoFocus
+                maxLength={40}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const next = nameDraft.trim();
+                    if (next && onRenameProject) onRenameProject(next);
+                    setEditingName(false);
+                  } else if (e.key === "Escape") {
+                    setNameDraft(projectName);
+                    setEditingName(false);
+                  }
+                }}
+                className="w-28 bg-transparent text-sm font-medium text-neutral-900 outline-none sm:w-44"
+              />
+              <button
+                type="button"
+                aria-label="Save name"
+                onClick={() => {
+                  const next = nameDraft.trim();
+                  if (next && onRenameProject) onRenameProject(next);
+                  setEditingName(false);
+                }}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-white"
               >
-                <span className="text-sm font-bold text-neutral-900">Rename project</span>
-                <input
-                  value={nameDraft}
-                  autoFocus
-                  maxLength={40}
-                  onChange={(e) => setNameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const next = nameDraft.trim();
-                      if (next && onRenameProject) onRenameProject(next);
-                      setEditingName(false);
-                    } else if (e.key === "Escape") {
-                      setNameDraft(projectName);
-                      setEditingName(false);
-                    }
-                  }}
-                  className="mt-3 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900 outline-none focus:border-neutral-900"
-                />
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    aria-label="Save name"
-                    onClick={() => {
-                      const next = nameDraft.trim();
-                      if (next && onRenameProject) onRenameProject(next);
-                      setEditingName(false);
-                    }}
-                    className="min-h-[44px] flex-1 rounded-xl bg-neutral-900 px-4 text-xs font-semibold text-white"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Cancel rename"
-                    onClick={() => {
-                      setNameDraft(projectName);
-                      setEditingName(false);
-                    }}
-                    className="min-h-[44px] flex-1 rounded-xl border border-neutral-200 bg-white px-4 text-xs font-semibold text-neutral-700"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+                <Check className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label="Cancel rename"
+                onClick={() => {
+                  setNameDraft(projectName);
+                  setEditingName(false);
+                }}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#E8E8E3] text-neutral-500"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           ) : (
             <button
@@ -1842,7 +1825,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             <button
               type="button"
               onClick={() => setShowShortcuts((s) => !s)}
-              className="hidden items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 sm:inline-flex"
+              className="hidden min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 sm:inline-flex"
             >
               Shortcuts
             </button>

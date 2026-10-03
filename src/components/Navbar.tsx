@@ -77,9 +77,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
+  const [activeAnchor, setActiveAnchor] = useState<string | null>(null);
+
   const handleNavClick = (view: AppView, anchorId?: string) => {
     setMobileMenuOpen(false);
     setUserDropdownOpen(false);
+    setActiveAnchor(anchorId ?? null);
 
     if (anchorId) {
       if (currentView !== 'landing') {
@@ -126,19 +129,25 @@ export const Navbar: React.FC<NavbarProps> = ({
             <>
               <button
                 onClick={() => handleNavClick('landing', 'how-it-works')}
-                className="hover:text-neutral-900 transition-colors cursor-pointer"
+                className={`transition-colors cursor-pointer ${
+                  currentView === 'landing' && activeAnchor === 'how-it-works' ? 'text-neutral-900 font-semibold' : 'hover:text-neutral-900'
+                }`}
               >
                 How It Works
               </button>
               <button
                 onClick={() => handleNavClick('landing', 'where-to-use')}
-                className="hover:text-neutral-900 transition-colors cursor-pointer"
+                className={`transition-colors cursor-pointer ${
+                  currentView === 'landing' && activeAnchor === 'where-to-use' ? 'text-neutral-900 font-semibold' : 'hover:text-neutral-900'
+                }`}
               >
                 Everyday Mediums
               </button>
               <button
                 onClick={() => handleNavClick('landing', 'personality')}
-                className="hover:text-neutral-900 transition-colors cursor-pointer"
+                className={`transition-colors cursor-pointer ${
+                  currentView === 'landing' && activeAnchor === 'personality' ? 'text-neutral-900 font-semibold' : 'hover:text-neutral-900'
+                }`}
               >
                 Personality
               </button>
@@ -369,25 +378,33 @@ export const Navbar: React.FC<NavbarProps> = ({
             <>
               <button
                 onClick={() => handleNavClick('landing', 'how-it-works')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium ${
+                  currentView === 'landing' && activeAnchor === 'how-it-works' ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
+                }`}
               >
                 How It Works
               </button>
               <button
                 onClick={() => handleNavClick('landing', 'where-to-use')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium ${
+                  currentView === 'landing' && activeAnchor === 'where-to-use' ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
+                }`}
               >
                 Everyday Mediums
               </button>
               <button
                 onClick={() => handleNavClick('landing', 'personality')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium ${
+                  currentView === 'landing' && activeAnchor === 'personality' ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
+                }`}
               >
                 Personality & Alternates
               </button>
               <button
                 onClick={() => handleNavClick('explore')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium ${
+                  currentView === 'explore' ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
+                }`}
               >
                 Explore Styles
               </button>
@@ -403,13 +420,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
               <button
                 onClick={() => handleNavClick('learn')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium ${
+                  currentView === 'learn' ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
+                }`}
               >
                 TypeMe Learn
               </button>
               <button
                 onClick={() => handleNavClick('pricing')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium ${
+                  currentView === 'pricing' ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
+                }`}
               >
                 Pricing
               </button>

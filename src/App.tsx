@@ -89,6 +89,12 @@ export default function App() {
     return 'dashboard';
   });
 
+  // Every view starts at the top (login, tabs, footer links, back/forward).
+  // Anchor navigation scrolls to its section afterwards via its own timer.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, [currentView]);
+
   // Persist navigation so a refresh restores the same view + project.
   useEffect(() => {
     try {
