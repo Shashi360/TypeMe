@@ -434,9 +434,9 @@ export interface DbSubscription {
 
 /**
  * Record a checkout intent as a PENDING subscription row owned by auth.uid().
- * Requires supabase/migrations/02-checkout-intent.sql (pending self-insert +
- * self-update policies). Throws 42501 until it is applied — callers treat
- * that as "server trace unavailable" and keep the local demo activation.
+ * Requires the pending-intent policies in supabase/typeme-master.sql.
+ * Throws 42501 until they are applied — callers treat that as
+ * "server trace unavailable" and keep the local demo activation.
  * Activation (pending -> active) stays backend-only (Razorpay webhook via
  * service_role); the entitlement RPC honors active rows exclusively.
  */

@@ -688,7 +688,7 @@ export default function App() {
       if (e164) syncProfilePhone(e164).catch(() => {});
       if (tier === 'pro') {
         createPendingSubscription('pro', 30).catch((err) => {
-          console.warn('Pending subscription not recorded (apply migrations/02-checkout-intent.sql):', err);
+          console.warn('Pending subscription not recorded (apply supabase/typeme-master.sql policies):', err);
         });
       }
     }

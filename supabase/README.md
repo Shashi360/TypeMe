@@ -11,15 +11,18 @@ serves the `.well-known` association files with correct content types.
 
 ## Checkout intent (required for subscription rows)
 
-`typeme-master.sql` already includes the pending-intent policies for fresh
-projects. For the EXISTING live project, apply once in Dashboard → SQL
-Editor:
+`typeme-master.sql` is the ONLY SQL file — it already contains the
+pending-intent policies. For the EXISTING live project, run just the
+three NEW statements once in Dashboard → SQL Editor (from the master
+file, Subscriptions/Payments section):
 
-  supabase/migrations/02-checkout-intent.sql
+  create policy "subscriptions_insert_own_pending" ...
+  create policy "subscriptions_update_own_pending" ...
+  create policy "payments_insert_own_initiated" ...
 
 What changes: the app records each Pro checkout as a `pending`
 subscription row owned by `auth.uid()` (visible immediately, phone-linked
 via `profiles.phone`). Activation to `active` stays backend-only
-(Razorpay webhook, service_role) — the contract is documented at the top
-of that file. The app adopts backend-activated Pro automatically via
+(Razorpay webhook, service_role) — the contract is documented in the
+master file. The app adopts backend-activated Pro automatically via
 `get_my_entitlement()` on every login.

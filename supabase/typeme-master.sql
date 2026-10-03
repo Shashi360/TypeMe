@@ -324,9 +324,9 @@ create policy "generation_jobs_select_own"
 
 -- Subscriptions: read-own only. Plan/status/expiry changes are backend-only
 -- (service role); a browser request can NEVER promote itself to Pro.
--- Exception (see migrations/02-checkout-intent.sql): users may record their
--- OWN checkout intent while status stays 'pending' — activation remains
--- backend-only and the entitlement RPC honors active rows exclusively.
+-- Exception: users may record their OWN checkout intent while status stays
+-- 'pending' — activation remains backend-only and the entitlement RPC
+-- honors active rows exclusively.
 create policy "subscriptions_select_own"
   on public.subscriptions for select
   using (user_id = auth.uid());
@@ -355,6 +355,13 @@ create policy "payments_insert_own_initiated"
     user_id = auth.uid()
     and status in ('pending', 'failed', 'cancelled')
   );
+
+-- BACKEND WEBHOOK CONTRACT (when Razorpay keys land; server-side only)
+-- 1. Create order (server): amount 9900 paise, currency INR, receipt uid.
+-- 2. Verify signature (server, HMAC-SHA256, key_secret — never browser).
+-- 3. service_role: payments -> verified + verified_at; subscriptions ->
+--    status 'active', started_at/expires_at (+30d), razorpay ids stored.
+-- 4. App reconciles on next load via get_my_entitlement() (already wired).
 
 create policy "user_settings_all_own"
   on public.user_settings for all
