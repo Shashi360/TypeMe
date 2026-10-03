@@ -10,6 +10,7 @@ import {
   Edit2,
   Eraser,
   Grip,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -199,7 +200,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [validationMsg, setValidationMsg] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(projectName);
-  const [mobileSheet, setMobileSheet] = useState<"brush" | "size" | "style" | "variant" | "more" | null>(null);
+  const [mobileSheet, setMobileSheet] = useState<"brush" | "size" | "style" | "variant" | "more" | "characters" | null>(null);
   const [upgrade, setUpgrade] = useState<UpgradeCopy | null>(null);
 
   const ent = useMemo(() => getEntitlements(tier), [tier]);
@@ -1083,17 +1084,74 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     : mobileSheet === "size" ? "Stroke Size"
     : mobileSheet === "style" ? "Canvas Style"
     : mobileSheet === "variant" ? "Variant"
+    : mobileSheet === "characters" ? "Characters"
     : "More";
 
   const alpha = Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
   const alphaLower = Array.from("abcdefghijklmnopqrstuvwxyz");
   const digits = Array.from("0123456789");
   const symbolsList = ["!", "@", "#", "$", "%", "&", "*", "(", ")", "-", "_", "+", "=", "{", "}", "[", "]", "|", "\\", "/", "?", "<", ">", ",", ".", ";", ":", "'", '"'];
+  const activeCategoryChars =
+    category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList;
+
+  // ONE character-cell renderer for every surface (mobile strip, sidebar
+  // grid, characters drawer). Same persisted-snapshot saved rule, same gold
+  // Pro crown, same selected style — presentation differs only by size.
+  const renderCharCell = (
+    ch: string,
+    opts?: { size?: "sm" | "lg"; trackActive?: boolean; onPick?: () => void },
+  ) => {
+    const cd = allChars.find((c: any) => c.char === ch);
+    // Saved = persisted ink in the stored snapshot (main strokes, variants,
+    // or completed flag). The live canvas is NOT consulted: while the current
+    // character holds unsaved edits, its dot hides until persistence succeeds.
+    const snapshot = cd as
+      | { completed?: boolean; strokes?: unknown[]; variants?: unknown[][] }
+      | undefined;
+    const done =
+      !!snapshot?.completed ||
+      (snapshot?.strokes?.length ?? 0) > 0 ||
+      (snapshot?.variants ?? []).some((v) => (v?.length ?? 0) > 0);
+    const cur = character.char === ch;
+    const locked = !ent.isCharacterAllowed(ch, done);
+    const showDot = done && !(cur && (isDirty || isSaving));
+    const sizeCls =
+      opts?.size === "lg"
+        ? "h-10 w-10 text-sm rounded-xl"
+        : "h-7 w-7 text-xs rounded-md";
+    return (
+      <button
+        key={ch}
+        type="button"
+        onClick={() => {
+          selectChar(ch);
+          opts?.onPick?.();
+        }}
+        data-active={opts?.trackActive && cur ? true : undefined}
+        title={locked ? `${ch} · Pro` : done ? `${ch} · done` : ch}
+        className={`relative flex shrink-0 items-center justify-center border font-medium transition-all ${sizeCls} ${
+          cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-2 border-blue-600 bg-blue-50 text-blue-800" : locked ? "border-[#E8E8E3] bg-neutral-50 text-neutral-400" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+        }`}
+      >
+        {ch}
+        {locked ? (
+          <Crown
+            className="pointer-events-none absolute right-[2px] top-[2px] h-3 w-3 text-amber-500"
+            fill="currentColor"
+            aria-label="Pro"
+          />
+        ) : showDot ? (
+          <span className="absolute right-[3px] top-[3px] h-[7px] w-[7px] rounded-full bg-blue-600 ring-2 ring-white" />
+        ) : null}
+      </button>
+    );
+  };
 
   return (
     <div
       ref={stageRef}
       className="fixed inset-0 z-50 flex h-dvh w-screen flex-col bg-[#FAFAF7] overflow-hidden"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
       data-testid="handwriting-canvas"
     >
       {/* Decorative blurred accents - subtle */}
@@ -1282,46 +1340,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             ref={stripRef}
             className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-                {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
-                  const cd = allChars.find((c: unknown) => (c as CharacterData).char === ch);
-                  // Saved = persisted ink in the stored snapshot (main strokes,
-                  // variants, or completed flag). The live canvas is NOT consulted:
-                  // while the current character holds unsaved edits, its dot hides
-                  // until persistence succeeds.
-                  const snapshot = cd as
-                    | { completed?: boolean; strokes?: unknown[]; variants?: unknown[][] }
-                    | undefined;
-                  const done =
-                    !!snapshot?.completed ||
-                    (snapshot?.strokes?.length ?? 0) > 0 ||
-                    (snapshot?.variants ?? []).some((v) => (v?.length ?? 0) > 0);
-                  const cur = character.char === ch;
-                  const locked = !ent.isCharacterAllowed(ch, done);
-                  const showDot = done && !(cur && (isDirty || isSaving));
-                  return (
-                    <button
-                      key={ch}
-                      type="button"
-                      onClick={() => selectChar(ch)}
-                      data-active={cur || undefined}
-                      title={locked ? `${ch} · Pro` : done ? `${ch} · done` : ch}
-                      className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-all ${
-                        cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-2 border-blue-600 bg-blue-50 text-blue-800" : locked ? "border-[#E8E8E3] bg-neutral-50 text-neutral-400" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
-                      }`}
-                    >
-                      {ch}
-                      {locked ? (
-                        <Crown
-                          className="pointer-events-none absolute right-[2px] top-[2px] h-3 w-3 text-amber-500"
-                          fill="currentColor"
-                          aria-label="Pro"
-                        />
-                      ) : showDot ? (
-                        <span className="absolute right-[3px] top-[3px] h-[7px] w-[7px] rounded-full bg-blue-600 ring-2 ring-white" />
-                      ) : null}
-                    </button>
-                  );
-                })}
+                {activeCategoryChars.map((ch) => renderCharCell(ch, { trackActive: true }))}
           </div>
         </div>
         {/* Top row: sidebar + canvas + tools */}
@@ -1384,45 +1403,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 </span>
               </div>
               <div className="flex flex-1 flex-wrap content-start justify-start gap-1 overflow-hidden px-3 pb-3">
-                {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
-                  const cd = allChars.find((c: any) => c.char === ch);
-                  // Saved = persisted ink in the stored snapshot (main strokes,
-                  // variants, or completed flag). The live canvas is NOT consulted:
-                  // while the current character holds unsaved edits, its dot hides
-                  // until persistence succeeds.
-                  const snapshot = cd as
-                    | { completed?: boolean; strokes?: unknown[]; variants?: unknown[][] }
-                    | undefined;
-                  const done =
-                    !!snapshot?.completed ||
-                    (snapshot?.strokes?.length ?? 0) > 0 ||
-                    (snapshot?.variants ?? []).some((v) => (v?.length ?? 0) > 0);
-                  const cur = character.char === ch;
-                  const locked = !ent.isCharacterAllowed(ch, done);
-                  const showDot = done && !(cur && (isDirty || isSaving));
-                  return (
-                    <button
-                      key={ch}
-                      type="button"
-                      onClick={() => selectChar(ch)}
-                      title={locked ? `${ch} · Pro` : done ? `${ch} · done` : ch}
-                      className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-all ${
-                        cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-2 border-blue-600 bg-blue-50 text-blue-800" : locked ? "border-[#E8E8E3] bg-neutral-50 text-neutral-400" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
-                      }`}
-                    >
-                      {ch}
-                      {locked ? (
-                        <Crown
-                          className="pointer-events-none absolute right-[2px] top-[2px] h-3 w-3 text-amber-500"
-                          fill="currentColor"
-                          aria-label="Pro"
-                        />
-                      ) : showDot ? (
-                        <span className="absolute right-[3px] top-[3px] h-[7px] w-[7px] rounded-full bg-blue-600 ring-2 ring-white" />
-                      ) : null}
-                    </button>
-                  );
-                })}
+                {activeCategoryChars.map((ch) => renderCharCell(ch))}
               </div>
             </div>
 
@@ -1840,7 +1821,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className="max-h-[46dvh] overflow-y-auto">
+          <div className={`overflow-y-auto ${mobileSheet === "characters" ? "max-h-[62dvh]" : "max-h-[46dvh]"}`}>
             {mobileSheet === "brush" ? (
               <div className="grid grid-cols-2 gap-2">
                 {(["gel", "fountain", "marker", "pencil"] as BrushType[]).map((b) => (
@@ -1971,8 +1952,52 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 ) : null}
               </div>
             ) : null}
+            {mobileSheet === "characters" ? (
+              <div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {(
+                    [
+                      { key: "upper", short: "A", name: "A–Z", group: alpha, count: getCategoryProgress(categoryGroups.upper), active: category === "uppercase" },
+                      { key: "lower", short: "a", name: "a–z", group: alphaLower, count: getCategoryProgress(categoryGroups.lower), active: category === "lowercase" },
+                      { key: "nums", short: "0", name: "0–9", group: digits, count: getCategoryProgress(categoryGroups.nums), active: category === "numbers" },
+                      { key: "symbols", short: "#", name: "Sym", group: symbolsList, count: getCategoryProgress(categoryGroups.symbols), active: category === "symbols" },
+                    ] as const
+                  ).map((cat) => (
+                    <button
+                      key={cat.key}
+                      type="button"
+                      onClick={() => jumpToCategoryFirst(cat.key, [...cat.group])}
+                      className={`flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-center transition-all ${
+                        cat.active ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700"
+                      }`}
+                    >
+                      <span className="text-sm font-bold leading-none">{cat.short}</span>
+                      <span className="text-[10px] font-semibold leading-none">{cat.name}</span>
+                      <span className={`text-[9px] leading-none ${cat.active ? "text-neutral-300" : "text-neutral-400"}`}>
+                        {cat.count.done}/{cat.count.total}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 grid grid-cols-5 justify-items-center gap-1.5 sm:grid-cols-7">
+                  {activeCategoryChars.map((ch) =>
+                    renderCharCell(ch, { size: "lg", onPick: () => setMobileSheet(null) }),
+                  )}
+                </div>
+              </div>
+            ) : null}
             {mobileSheet === "more" ? (
               <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMobileSheet("characters")}
+                  className="inline-flex min-h-[44px] items-center justify-between rounded-xl border border-[#E8E8E3] bg-white px-3 text-xs font-medium text-neutral-700"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <LayoutGrid className="h-4 w-4" /> Characters: {activeCategoryChars.length} in view
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-neutral-400" />
+                </button>
                 <button
                   type="button"
                   onClick={() => setMobileSheet("variant")}
@@ -1981,6 +2006,21 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   <span>Variant: {activeVariant === -1 ? "Main" : `Alternate ${activeVariant + 1}`}</span>
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
                 </button>
+                {!ent.isPro ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileSheet(null);
+                      setUpgrade(upgradeForCharacters);
+                    }}
+                    className="inline-flex min-h-[44px] items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-900"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <Crown className="h-4 w-4" fill="currentColor" /> Plan: Free · Upgrade
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-amber-700" />
+                  </button>
+                ) : null}
                 {hasPrevious && onPrevious ? (
                   <button
                     type="button"

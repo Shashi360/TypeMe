@@ -32,14 +32,15 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-neutral-900/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`Upgrade for ${feature}`}
     >
       <div
-        className="relative w-full max-w-sm rounded-3xl border border-neutral-200 bg-white p-6 shadow-2xl"
+        className="relative w-full max-w-sm rounded-t-3xl border border-neutral-200 bg-white p-6 shadow-2xl sm:rounded-3xl"
+        style={{ marginBottom: "max(0px, env(safe-area-inset-bottom))" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
