@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  FREE_CHARACTER_SET,
   getEntitlements,
   upgradeForBrush,
   upgradeForCanvasStyle,
@@ -132,6 +133,19 @@ const getBrushColor = (brush: BrushType) => {
   }
 };
 
+/**
+ * Small gold crown pinned to Pro-only options (brushes, sizes, styles,
+ * + Add). Locked controls keep their normal look and stay clickable —
+ * tapping one opens the upgrade modal via the trySelect* choke points.
+ */
+const ProCrown: React.FC = () => (
+  <Crown
+    className="pointer-events-none absolute right-1 top-1 h-3 w-3 text-amber-500"
+    fill="currentColor"
+    aria-label="Pro"
+  />
+);
+
 export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   character,
   project,
@@ -152,6 +166,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const sheetWasOpen = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
 
   const [strokes, setStrokes] = useState<Stroke[]>(character.strokes ?? []);
@@ -883,14 +899,46 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     return () => cancelAnimationFrame(raf);
   }, [draw]);
 
+  // Container determines canvas size: ResizeObserver measures the actual
+  // available space (orientation, keyboard, panels) and the bitmap follows
+  // via DPR. CSS/display size and bitmap stay separate — never write
+  // canvas.style.width/height.
   useEffect(() => {
-    const handleResize = () => {
-      draw();
-      setDpr(window.devicePixelRatio || 1);
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        draw();
+        setDpr(window.devicePixelRatio || 1);
+      });
+    });
+    ro.observe(container);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
     };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
   }, [draw]);
+
+  // Keep the selected character visible in the mobile strip.
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector('[data-active="true"]')
+      ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [character.char]);
+
+  // Return focus to the canvas when a bottom sheet closes.
+  useEffect(() => {
+    if (mobileSheet) {
+      sheetWasOpen.current = true;
+      return;
+    }
+    if (sheetWasOpen.current) {
+      sheetWasOpen.current = false;
+      canvasRef.current?.focus({ preventScroll: true });
+    }
+  }, [mobileSheet]);
 
   const toggleFullscreen = useCallback(() => {
     const el = stageRef.current ?? document.documentElement;
@@ -987,7 +1035,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     };
   }, [isDirty, performSave]);
 
-  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  // Progress denominator is plan-aware: Free tracks against the starter
+  // set from central entitlements, Pro against the full glyph set.
+  const progressDenominator = ent.isPro ? totalCount : FREE_CHARACTER_SET.length;
+  const progressPct =
+    progressDenominator > 0 ? Math.round((completedCount / progressDenominator) * 100) : 0;
   const isCompleted =
     strokes.length > 0 || variants.some((v) => v.length > 0);
   const category = character.category || "uppercase";
@@ -1058,7 +1110,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
           <div className="hidden items-center gap-2.5 rounded-full border border-[#E8E8E3] bg-neutral-50 px-3 py-1.5 lg:flex">
             <span className="text-xs font-medium text-neutral-600">
-              {completedCount} / {totalCount} written
+              {ent.isPro
+                ? `${completedCount} / ${totalCount} written`
+                : `${completedCount} / ${FREE_CHARACTER_SET.length} Free`}
             </span>
             <div className="h-1.5 w-20 overflow-hidden rounded-full bg-neutral-200">
               <div className="h-full rounded-full bg-neutral-900 transition-all" style={{ width: `${progressPct}%` }} />
@@ -1133,13 +1187,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
         {/* Right */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          <div className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 sm:flex">
+          <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
             {isSaving || isDirty ? (
               <span>Saving…</span>
             ) : (
               <>
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-600" aria-label="Saved" />
-                <span>Autosaved</span>
+                <span className="hidden sm:inline">Autosaved</span>
               </>
             )}
             <Check className="h-3.5 w-3.5" />
@@ -1160,16 +1214,26 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               <X className="h-4 w-4" />
             </button>
           ) : null}
-          <div
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold shadow-sm ${
-              ent.isPro
-                ? "border-amber-200 bg-amber-50 text-amber-900"
-                : "border-neutral-200 bg-neutral-50 text-neutral-600"
-            }`}
-          >
-            <Crown className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{ent.isPro ? "Pro Plan" : "Free Plan"}</span>
-          </div>
+          {ent.isPro ? (
+            <div className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 shadow-sm">
+              <Crown className="h-3.5 w-3.5" fill="currentColor" />
+              <span>Pro ✓</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (onUpgrade) {
+                  onUpgrade();
+                } else {
+                  setUpgrade(upgradeForCharacters);
+                }
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-xs font-semibold text-neutral-600 shadow-sm transition-colors hover:border-amber-300 hover:text-amber-800"
+            >
+              <span>Free · Upgrade</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -1205,7 +1269,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               </button>
             ))}
           </div>
-          <div className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={stripRef}
+            className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
                 {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
                   const cd = allChars.find((c: unknown) => (c as CharacterData).char === ch);
                   const done = (cd as { completed?: boolean } | undefined)?.completed || (cd?.strokes?.length ?? 0) > 0;
@@ -1216,15 +1283,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       key={ch}
                       type="button"
                       onClick={() => selectChar(ch)}
-                      className={`relative flex h-7 w-7 items-center justify-center rounded-md border text-xs font-medium transition-all ${
-                        cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+                      data-active={cur || undefined}
+                      title={locked ? `${ch} · Pro` : done ? `${ch} · done` : ch}
+                      className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-all ${
+                        cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-2 border-blue-600 bg-blue-50 text-blue-800" : locked ? "border-[#E8E8E3] bg-neutral-50 text-neutral-400" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
                     >
                       {ch}
                       {locked ? (
-                        <Lock className="absolute bottom-1 left-1 h-2 w-2 text-neutral-400" />
-                      ) : done ? (
-                        <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-blue-600 ring-1 ring-white" />
+                        <Lock className="absolute bottom-[1px] right-[2px] h-3 w-3 text-neutral-900" />
                       ) : null}
                     </button>
                   );
@@ -1284,7 +1351,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
                   {category === "uppercase" ? "A–Z" : category === "lowercase" ? "a–z" : category === "numbers" ? "0–9" : "Symbols"}
                 </span>
-                <span className="text-[10px] text-neutral-400">{completedCount}/{totalCount}</span>
+                <span className="text-[10px] text-neutral-400">
+                  {ent.isPro
+                    ? `${completedCount}/${totalCount} written`
+                    : `${completedCount}/${FREE_CHARACTER_SET.length} Free`}
+                </span>
               </div>
               <div className="flex flex-1 flex-wrap content-start justify-start gap-1 overflow-hidden px-3 pb-3">
                 {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
@@ -1297,15 +1368,14 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       key={ch}
                       type="button"
                       onClick={() => selectChar(ch)}
-                      className={`relative flex h-7 w-7 items-center justify-center rounded-md border text-xs font-medium transition-all ${
-                        cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
+                      title={locked ? `${ch} · Pro` : done ? `${ch} · done` : ch}
+                      className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-all ${
+                        cur ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : done ? "border-2 border-blue-600 bg-blue-50 text-blue-800" : locked ? "border-[#E8E8E3] bg-neutral-50 text-neutral-400" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
                     >
                       {ch}
                       {locked ? (
-                        <Lock className="absolute bottom-1 left-1 h-2 w-2 text-neutral-400" />
-                      ) : done ? (
-                        <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-blue-600 ring-1 ring-white" />
+                        <Lock className="absolute bottom-[1px] right-[2px] h-3 w-3 text-neutral-900" />
                       ) : null}
                     </button>
                   );
@@ -1383,11 +1453,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   ) : null}
                   <canvas
                     ref={canvasRef}
+                    tabIndex={-1}
                     onPointerDown={startDrawing}
                     onPointerMove={moveDrawing}
                     onPointerUp={endDrawing}
                     onPointerCancel={handlePointerCancel}
-                    className="block h-full w-full max-w-full touch-none cursor-crosshair"
+                    className="block h-full w-full max-w-full touch-none cursor-crosshair focus:outline-none"
                     style={{ touchAction: "none" }}
                   />
                   {/* Bottom canvas message */}
@@ -1455,10 +1526,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       key={b}
                       type="button"
                       onClick={() => trySelectBrush(b)}
-                      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs transition-colors ${
+                      className={`relative flex flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs transition-colors ${
                         brushType === b ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
                     >
+                      {!ent.canUseBrush(b) ? <ProCrown /> : null}
                       <span className="capitalize">{b}</span>
                       {brushPreview(b)}
                     </button>
@@ -1475,10 +1547,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       key={s}
                       type="button"
                       onClick={() => trySelectSize(s)}
-                      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs capitalize transition-colors ${
+                      className={`relative flex flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs capitalize transition-colors ${
                         strokeSize === s ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
                     >
+                      {!ent.canUseStrokeSize(s) ? <ProCrown /> : null}
                       {s}
                       <div className="flex h-3 w-full items-center justify-center">
                         {s === "fine" && <span className="text-lg leading-none">·</span>}
@@ -1499,10 +1572,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       key={style}
                       type="button"
                       onClick={() => trySelectStyle(style)}
-                      className={`flex items-center justify-center rounded-lg border px-2 py-1.5 text-xs capitalize transition-colors ${
+                      className={`relative flex items-center justify-center rounded-lg border px-2 py-1.5 text-xs capitalize transition-colors ${
                         canvasStyle === style ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700 hover:border-neutral-300"
                       }`}
                     >
+                      {!ent.canUseCanvasStyle(style) ? <ProCrown /> : null}
                       {style}
                     </button>
                   ))}
@@ -1555,8 +1629,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     <button
                       type="button"
                       onClick={addVariant}
-                      className="inline-flex h-7 items-center justify-center rounded-lg border border-dashed border-[#E8E8E3] bg-white px-2 text-xs font-medium text-neutral-600 hover:border-neutral-300"
+                      className="relative inline-flex h-7 items-center justify-center rounded-lg border border-dashed border-[#E8E8E3] bg-white px-2 text-xs font-medium text-neutral-600 hover:border-neutral-300"
                     >
+                      {!ent.canCreateVariant(variants.length) ? <ProCrown /> : null}
                       + Add
                     </button>
                   ) : null}
@@ -1733,10 +1808,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       trySelectBrush(b);
                       setMobileSheet(null);
                     }}
-                    className={`flex min-h-[52px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
+                    className={`relative flex min-h-[52px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
                       brushType === b ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
                     }`}
                   >
+                    {!ent.canUseBrush(b) ? <ProCrown /> : null}
                     {b}
                     {brushPreview(b)}
                   </button>
@@ -1753,10 +1829,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       trySelectSize(s);
                       setMobileSheet(null);
                     }}
-                    className={`flex min-h-[52px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
+                    className={`relative flex min-h-[52px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
                       strokeSize === s ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
                     }`}
                   >
+                    {!ent.canUseStrokeSize(s) ? <ProCrown /> : null}
                     {s}
                     <div className="flex h-3 w-full items-center justify-center">
                       {s === "fine" && <span className="text-lg leading-none">·</span>}
@@ -1777,10 +1854,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       trySelectStyle(style);
                       setMobileSheet(null);
                     }}
-                    className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
+                    className={`relative flex min-h-[52px] items-center justify-center gap-2 rounded-xl border px-2 py-2 text-xs capitalize transition-colors ${
                       canvasStyle === style ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
                     }`}
                   >
+                    {!ent.canUseCanvasStyle(style) ? <ProCrown /> : null}
                     {style === "typography" ? <Type className="h-4 w-4" /> : null}
                     {style === "notebook" ? <AlignJustify className="h-4 w-4" /> : null}
                     {style === "dots" ? <Grip className="h-4 w-4" /> : null}
@@ -1842,8 +1920,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                       addVariant();
                       setMobileSheet(null);
                     }}
-                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-dashed border-[#E8E8E3] bg-white px-3 text-xs font-medium text-neutral-600"
+                    className="relative inline-flex min-h-[44px] items-center justify-center rounded-xl border border-dashed border-[#E8E8E3] bg-white px-3 text-xs font-medium text-neutral-600"
                   >
+                    {!ent.canCreateVariant(variants.length) ? <ProCrown /> : null}
                     + Add
                   </button>
                 ) : null}
@@ -1911,6 +1990,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         open={!!upgrade}
         feature={upgrade?.feature ?? ""}
         description={upgrade?.description ?? ""}
+        bullets={upgrade?.bullets}
         onClose={() => setUpgrade(null)}
         onUpgrade={onUpgrade}
       />

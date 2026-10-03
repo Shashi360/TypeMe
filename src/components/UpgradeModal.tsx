@@ -1,13 +1,20 @@
 import React from "react";
-import { Crown, X } from "lucide-react";
+import { Check, Crown, X } from "lucide-react";
 
 interface UpgradeModalProps {
   open: boolean;
   feature: string;
   description: string;
+  bullets?: string[];
   onClose: () => void;
   onUpgrade?: () => void;
 }
+
+const DEFAULT_BULLETS = [
+  "Everything in Free, plus more",
+  "More natural handwriting",
+  "Advanced font creation",
+];
 
 /**
  * The single reusable upgrade prompt for the whole product.
@@ -18,6 +25,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   open,
   feature,
   description,
+  bullets,
   onClose,
   onUpgrade,
 }) => {
@@ -37,8 +45,23 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
           <Crown className="h-5 w-5 text-amber-700" />
         </div>
-        <h3 className="font-serif text-xl font-bold text-neutral-900">{feature} is Pro</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-serif text-xl font-bold text-neutral-900">{feature}</h3>
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+            Pro
+          </span>
+        </div>
         <p className="mt-1 text-xs leading-relaxed text-neutral-600">{description}</p>
+        <ul className="mt-3 flex flex-col gap-1.5">
+          {(bullets ?? DEFAULT_BULLETS).slice(0, 3).map((b) => (
+            <li key={b} className="flex items-center gap-2 text-xs font-medium text-neutral-700">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                <Check className="h-2.5 w-2.5 text-emerald-700" strokeWidth={3} />
+              </span>
+              {b}
+            </li>
+          ))}
+        </ul>
         <div className="mt-4 flex items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
           <div>
             <span className="block font-serif text-sm font-bold text-neutral-900">TypeMe Pro</span>
