@@ -3,7 +3,7 @@ import { FontProject } from '../types';
 import { generateFontFromCharacters, GenerationProgress } from '../utils/fontGenerator';
 import { getEntitlements } from '../utils/entitlements';
 import confetti from 'canvas-confetti';
-import { CheckCircle2, AlertCircle, Loader2, Crown, ArrowRight } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Loader2, Crown, ArrowRight, Eye, X } from 'lucide-react';
 
 interface GenerationModalProps {
   isOpen: boolean;
@@ -17,6 +17,13 @@ interface GenerationModalProps {
   onReview?: () => void;
   tier?: string;
   onUpgrade?: () => void;
+  onPreviewFont?: () => void;
+}
+
+interface CompletedResult {
+  otfBlobUrl: string;
+  registeredFontFamily: string;
+  fileSizeBytes: number;
 }
 
 const STAGE_LABELS = [
@@ -36,6 +43,7 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
   onReview,
   tier = 'free',
   onUpgrade,
+  onPreviewFont,
 }) => {
   const [progress, setProgress] = useState<GenerationProgress>({
     step: 1,
@@ -45,6 +53,9 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
   const [isGenerating, setIsGenerating] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [runId, setRunId] = useState(0);
+  // The completed artifact. The success dialog stays open until the user
+  // explicitly continues — nothing auto-dismisses or auto-navigates.
+  const [completed, setCompleted] = useState<CompletedResult | null>(null);
 
   const ent = useMemo(() => getEntitlements(tier), [tier]);
 
@@ -65,6 +76,7 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
 
     let mounted = true;
     setError(null);
+    setCompleted(null);
 
     if (validationFailed) {
       setIsGenerating(false);
@@ -86,25 +98,22 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
 
         if (mounted) {
           setIsGenerating(false);
-          // Trigger celebratory confetti
+          setCompleted({
+            otfBlobUrl: result.otfUrl,
+            registeredFontFamily: result.registeredFontFamily,
+            fileSizeBytes: result.fileSizeBytes,
+          });
+          // Subtle celebration — no auto-dismiss, no auto-navigation.
           try {
             confetti({
-              particleCount: 65,
-              spread: 60,
+              particleCount: 45,
+              spread: 55,
               origin: { y: 0.65 },
-              colors: ['#0f172a', '#f59e0b', '#10b981', '#6366f1'],
+              colors: ['#0f172a', '#f59e0b', '#10b981'],
             });
           } catch (e) {
             // ignore if blocked
           }
-
-          setTimeout(() => {
-            onGenerationComplete({
-              otfBlobUrl: result.otfUrl,
-              registeredFontFamily: result.registeredFontFamily,
-              fileSizeBytes: result.fileSizeBytes,
-            });
-          }, 600);
         }
       } catch (err: any) {
         if (mounted) {
@@ -127,7 +136,15 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl border border-neutral-200 shadow-2xl max-w-md w-full p-7 text-center max-h-[90dvh] overflow-y-auto">
+      <div className="relative bg-white rounded-2xl border border-neutral-200 shadow-2xl max-w-md w-full p-7 text-center max-h-[90dvh] overflow-y-auto">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 text-neutral-400 hover:text-neutral-700 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
         <div className="w-12 h-12 rounded-xl bg-neutral-900 text-white flex items-center justify-center mx-auto mb-4 shadow-sm">
           {isGenerating ? (
             <Loader2 className="w-6 h-6 animate-spin text-amber-300" />
@@ -270,7 +287,36 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
           </div>
         )}
 
-        {!validationFailed && !isGenerating && !error && !ent.isPro ? (
+        {!validationFailed && !isGenerating && !error && completed ? (
+          <div className="space-y-3 mt-1">
+            <p className="text-xs text-neutral-600 leading-relaxed">
+              Your handwriting has been turned into a font.
+            </p>
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Font generated
+            </div>
+            <div className="flex flex-col gap-2 pt-1">
+              {onPreviewFont ? (
+                <button
+                  type="button"
+                  onClick={onPreviewFont}
+                  className="w-full px-4 py-2.5 text-xs font-semibold text-neutral-900 bg-white hover:bg-neutral-50 border border-neutral-200 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5" /> Font Preview
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onGenerationComplete(completed)}
+                className="w-full px-4 py-2.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                Continue <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {!validationFailed && !isGenerating && !error && completed && !ent.isPro ? (
           <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
             <div className="flex items-center gap-2 text-xs font-bold text-neutral-900">
               <Crown className="w-4 h-4 text-amber-700" />

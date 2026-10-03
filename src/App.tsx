@@ -652,6 +652,10 @@ export default function App() {
           project={activeProject}
           onClose={() => setGenerationModalOpen(false)}
           onGenerationComplete={handleGenerationComplete}
+          onPreviewFont={() => {
+            setGenerationModalOpen(false);
+            setCurrentView('preview');
+          }}
           onReview={() => {
             setGenerationModalOpen(false);
             setCurrentView('review');
