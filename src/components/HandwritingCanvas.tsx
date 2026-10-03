@@ -10,6 +10,7 @@ import {
   Edit2,
   Eraser,
   Grip,
+  Layers,
   LayoutGrid,
   Maximize2,
   Minimize2,
@@ -35,6 +36,7 @@ import {
   type UpgradeCopy,
 } from "../utils/entitlements";
 import { UpgradeModal } from "./UpgradeModal";
+import { usePresentationMode } from "../hooks/usePresentationMode";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -940,6 +942,43 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     }
   }, [mobileSheet]);
 
+  // Escape closes the open bottom sheet (backdrop click already does).
+  useEffect(() => {
+    if (!mobileSheet) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileSheet(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileSheet]);
+
+  // Return focus to the canvas when the upgrade modal closes.
+  const upgradeWasOpen = useRef(false);
+  useEffect(() => {
+    if (upgrade) {
+      upgradeWasOpen.current = true;
+      return;
+    }
+    if (upgradeWasOpen.current) {
+      upgradeWasOpen.current = false;
+      canvasRef.current?.focus({ preventScroll: true });
+    }
+  }, [upgrade]);
+
+  // Dev-only QA watchdog: page-level horizontal overflow must stay zero.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const check = () => {
+      const over = document.documentElement.scrollWidth - window.innerWidth;
+      if (over > 1) {
+        console.warn(`[TypeMe] page horizontal overflow: ${over}px`);
+      }
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   const toggleFullscreen = useCallback(() => {
     const el = stageRef.current ?? document.documentElement;
     if (!document.fullscreenElement) {
@@ -1147,6 +1186,205 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     );
   };
 
+  // ---- Dedicated presentation compositions (shared state + engine) ----
+  const { mode, orientation } = usePresentationMode();
+  const isDesktop = mode === "desktop";
+  const isMobile = mode === "mobile";
+  const tabletPortrait = mode === "tablet" && orientation === "portrait";
+  const tabletLandscape = mode === "tablet" && orientation === "landscape";
+
+  // Center canvas, byte-identical to the approved desktop canvas.
+  // `fluid` drops the fixed minimums so stacked (mobile / tablet-portrait)
+  // shells can size it purely from remaining viewport space.
+  const renderCanvasMain = (fluid: boolean) => (
+    <main
+      className={
+        fluid
+          ? "flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center"
+          : "flex min-h-[300px] min-w-0 flex-1 flex-col items-center justify-center sm:min-h-[400px] md:min-h-[440px] lg:min-h-0"
+      }
+    >
+      <div className="flex w-full min-w-0 max-w-full flex-1 flex-col items-center rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,920px)] xl:max-w-[min(100%,980px)] 2xl:max-w-[min(100%,1040px)]">
+        {/* Canvas header */}
+        <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900 shadow-sm sm:h-12 sm:w-12 sm:text-3xl">
+              {character.char}
+            </span>
+            {isCompleted ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-800">
+                <Check className="h-3 w-3" /> Completed
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Canvas card */}
+        <div className="relative flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden p-2 sm:p-3 lg:p-4">
+          {variantToDelete !== null ? (
+            <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 shadow-sm">
+              <AlertCircle className="h-3.5 w-3.5" />
+              <span>Delete this variant? Your handwriting in it will be permanently removed.</span>
+              <button type="button" onClick={() => setVariantToDelete(null)} className="rounded-full border border-rose-200 bg-white px-2 py-0.5 font-medium">Cancel</button>
+              <button type="button" onClick={performVariantDelete} className="rounded-full bg-rose-700 px-2 py-0.5 font-medium text-white">Delete</button>
+            </div>
+          ) : null}
+          {validationMsg ? (
+            <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 shadow-sm">
+              <AlertCircle className="h-3.5 w-3.5" />
+              <span>{validationMsg}</span>
+              <button type="button" onClick={() => setValidationMsg(null)} className="rounded-full border border-rose-200 bg-white px-2 py-0.5 font-medium">OK</button>
+            </div>
+          ) : null}
+
+          {/* Top-right creative note */}
+          {/* Creative note removed as requested */}
+
+          {/* Canvas stage */}
+          <div
+            ref={containerRef}
+            className="relative m-auto flex min-h-0 w-full min-w-0 items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
+            style={{
+              overflow: "hidden",
+              aspectRatio: "1 / 1",
+              // Keep the square writing surface inside the available
+              // viewport height (header + toolbar + padding accounted
+              // for) so it never touches the header or action bar and
+              // never stretches — it only ever shrinks to fit.
+              maxWidth: "min(100%, max(280px, calc(100dvh - 340px)))",
+              maxHeight: "100%",
+            }}
+          >
+            {isEraser && eraserPos ? (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none fixed z-30 rounded-full border-2 border-neutral-400 bg-neutral-200/40 backdrop-blur-sm"
+                style={{
+                  left: eraserPos.x - eraserSize / 2,
+                  top: eraserPos.y - eraserSize / 2,
+                  width: eraserSize,
+                  height: eraserSize,
+                }}
+              />
+            ) : null}
+            <canvas
+              ref={canvasRef}
+              tabIndex={-1}
+              onPointerDown={startDrawing}
+              onPointerMove={moveDrawing}
+              onPointerUp={endDrawing}
+              onPointerCancel={handlePointerCancel}
+              className="block h-full w-full max-w-full touch-none cursor-crosshair focus:outline-none"
+              style={{ touchAction: "none" }}
+            />
+            {/* Bottom canvas message */}
+            <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
+              <span className="text-[9px] uppercase tracking-[0.32em] text-neutral-300 sm:text-[10px]">WRITE NATURALLY</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+
+  const categoryTabs = [
+    { key: "upper", short: "A", name: "A–Z", group: alpha, count: getCategoryProgress(categoryGroups.upper), active: category === "uppercase" },
+    { key: "lower", short: "a", name: "a–z", group: alphaLower, count: getCategoryProgress(categoryGroups.lower), active: category === "lowercase" },
+    { key: "nums", short: "0", name: "0–9", group: digits, count: getCategoryProgress(categoryGroups.nums), active: category === "numbers" },
+    { key: "symbols", short: "#", name: "Sym", group: symbolsList, count: getCategoryProgress(categoryGroups.symbols), active: category === "symbols" },
+  ] as const;
+
+  const gotoCategory = (cat: (typeof categoryTabs)[number]) => {
+    jumpToCategoryFirst(cat.key, [...cat.group]);
+  };
+
+  // Tablet-portrait category pills: horizontal scroll row with counts.
+  const renderCategoryPills = () => (
+    <div className="flex shrink-0 gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {categoryTabs.map((cat) => (
+        <button
+          key={cat.key}
+          type="button"
+          onClick={() => gotoCategory(cat)}
+          className={`inline-flex min-h-[44px] shrink-0 items-center gap-2 rounded-full border px-4 text-xs font-semibold transition-all ${
+            cat.active ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700"
+          }`}
+        >
+          <span>{cat.name}</span>
+          <span className={`text-[10px] font-medium ${cat.active ? "text-neutral-300" : "text-neutral-400"}`}>
+            {cat.count.done}/{cat.count.total}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
+  // Compact left navigation for tablet landscape (categories + grid).
+  const renderCompactSidebar = () => (
+    <aside className="flex h-full w-[188px] shrink-0 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm">
+      <div className="flex flex-col gap-1.5 p-2">
+        {categoryTabs.map((cat) => (
+          <button
+            key={cat.key}
+            type="button"
+            onClick={() => gotoCategory(cat)}
+            className={`flex min-h-[44px] items-center justify-between rounded-xl border px-2.5 text-left transition-all ${
+              cat.active ? "border-neutral-900 bg-neutral-900 text-white shadow-sm" : "border-[#E8E8E3] bg-white text-neutral-700"
+            }`}
+          >
+            <span className="text-xs font-bold">{cat.name}</span>
+            <span className={`text-[10px] ${cat.active ? "text-neutral-300" : "text-neutral-400"}`}>
+              {cat.count.done}/{cat.count.total}
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col border-t border-[#E8E8E3]">
+        <div className="flex items-center justify-between px-2.5 py-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+            {category === "uppercase" ? "A–Z" : category === "lowercase" ? "a–z" : category === "numbers" ? "0–9" : "Symbols"}
+          </span>
+        </div>
+        <div className="flex flex-1 flex-wrap content-start gap-1 overflow-y-auto px-2 pb-2">
+          {activeCategoryChars.map((ch) => renderCharCell(ch))}
+        </div>
+      </div>
+    </aside>
+  );
+
+  // Vertical contextual tool rail for tablet landscape (details in sheets).
+  const renderToolRail = () => {
+    const railBtn =
+      "inline-flex min-h-[48px] w-full flex-col items-center justify-center gap-0.5 rounded-xl border px-1 text-[10px] font-medium capitalize transition-colors";
+    const idle = "border-[#E8E8E3] bg-white text-neutral-700";
+    const on = "border-neutral-900 bg-neutral-900 text-white";
+    return (
+      <div className="flex h-full w-[68px] shrink-0 flex-col items-stretch gap-1.5 overflow-y-auto rounded-2xl border border-[#E8E8E3] bg-white p-1.5 shadow-sm">
+        <button type="button" onClick={() => setToolMode("pen")} aria-label="Pen" className={`${railBtn} ${toolMode === "pen" ? on : idle}`}>
+          <PenTool className="h-4 w-4" /> Pen
+        </button>
+        <button type="button" onClick={() => setToolMode("eraser")} aria-label="Eraser" className={`${railBtn} ${toolMode === "eraser" ? on : idle}`}>
+          <Eraser className="h-4 w-4" /> Erase
+        </button>
+        <button type="button" onClick={() => setMobileSheet("brush")} aria-label="Brush" className={`${railBtn} ${mobileSheet === "brush" ? on : idle}`}>
+          <Brush className="h-4 w-4" /> {brushType}
+        </button>
+        <button type="button" onClick={() => setMobileSheet("size")} aria-label="Stroke size" className={`${railBtn} ${mobileSheet === "size" ? on : idle}`}>
+          <Ruler className="h-4 w-4" /> {strokeSize}
+        </button>
+        <button type="button" onClick={() => setMobileSheet("style")} aria-label="Canvas style" className={`${railBtn} ${mobileSheet === "style" ? on : idle}`}>
+          <AlignJustify className="h-4 w-4" /> {canvasStyle === "typography" ? "Type" : canvasStyle}
+        </button>
+        <button type="button" onClick={() => setMobileSheet("variant")} aria-label="Variants" className={`${railBtn} ${mobileSheet === "variant" ? on : idle}`}>
+          <Layers className="h-4 w-4" /> {activeVariant === -1 ? "Main" : `V${activeVariant + 1}`}
+        </button>
+        <button type="button" onClick={() => setMobileSheet("more")} aria-label="More" className={`${railBtn} ${mobileSheet === "more" ? on : idle}`}>
+          <MoreHorizontal className="h-4 w-4" /> More
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div
       ref={stageRef}
@@ -1189,47 +1427,62 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         {/* Center — project name (editable) */}
         <div className="absolute left-1/2 top-1/2 flex max-w-[40vw] -translate-x-1/2 -translate-y-1/2 items-center">
           {editingName ? (
-            <div className="flex items-center gap-1 rounded-full border border-neutral-300 bg-white px-2 py-1 shadow-sm">
-              <input
-                value={nameDraft}
-                autoFocus
-                maxLength={40}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const next = nameDraft.trim();
-                    if (next && onRenameProject) onRenameProject(next);
-                    setEditingName(false);
-                  } else if (e.key === "Escape") {
-                    setNameDraft(projectName);
-                    setEditingName(false);
-                  }
-                }}
-                className="w-28 bg-transparent text-sm font-medium text-neutral-900 outline-none sm:w-44"
-              />
-              <button
-                type="button"
-                aria-label="Save name"
-                onClick={() => {
-                  const next = nameDraft.trim();
-                  if (next && onRenameProject) onRenameProject(next);
-                  setEditingName(false);
-                }}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-white"
+            <div
+              className="tm-fade fixed inset-0 z-[65] flex items-center justify-center bg-neutral-900/40 p-4"
+              onClick={() => {
+                setNameDraft(projectName);
+                setEditingName(false);
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Rename project"
+            >
+              <div
+                className="tm-pop w-full max-w-xs rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
               >
-                <Check className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                aria-label="Cancel rename"
-                onClick={() => {
-                  setNameDraft(projectName);
-                  setEditingName(false);
-                }}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#E8E8E3] text-neutral-500"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+                <span className="text-sm font-bold text-neutral-900">Rename project</span>
+                <input
+                  value={nameDraft}
+                  autoFocus
+                  maxLength={40}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const next = nameDraft.trim();
+                      if (next && onRenameProject) onRenameProject(next);
+                      setEditingName(false);
+                    } else if (e.key === "Escape") {
+                      setNameDraft(projectName);
+                      setEditingName(false);
+                    }
+                  }}
+                  className="mt-3 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900 outline-none focus:border-neutral-900"
+                />
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = nameDraft.trim();
+                      if (next && onRenameProject) onRenameProject(next);
+                      setEditingName(false);
+                    }}
+                    className="min-h-[44px] flex-1 rounded-xl bg-neutral-900 px-4 text-xs font-semibold text-white"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNameDraft(projectName);
+                      setEditingName(false);
+                    }}
+                    className="min-h-[44px] flex-1 rounded-xl border border-neutral-200 bg-white px-4 text-xs font-semibold text-neutral-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
             <button
@@ -1304,10 +1557,17 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         </div>
       </header>
 
-      {/* Main workspace */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-2 sm:gap-3 sm:p-3 lg:gap-4 lg:overflow-hidden lg:p-4">
-        {/* Mobile character navigator: 4 tabs + letters with saved dots (tablet uses sidebar) */}
-        <div className="flex shrink-0 flex-col gap-1.5 rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm md:hidden">
+      {/* Main workspace — mobile/tablet shells never scroll; canvas flexes */}
+      <div
+        className={
+          isDesktop
+            ? "relative z-10 flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-2 sm:gap-3 sm:p-3 lg:gap-4 lg:overflow-hidden lg:p-4"
+            : "relative z-10 flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2 sm:gap-2.5 sm:p-2.5"
+        }
+      >
+        {/* Mobile character navigator (mobile composition only) */}
+        {isMobile ? (
+        <div className="flex shrink-0 flex-col gap-1.5 rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm">
           <div className="grid grid-cols-4 gap-1.5">
             {(
               [
@@ -1343,10 +1603,24 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 {activeCategoryChars.map((ch) => renderCharCell(ch, { trackActive: true }))}
           </div>
         </div>
-        {/* Top row: sidebar + canvas + tools */}
+        ) : null}
+        {/* Tablet-portrait navigation: scrollable pills + strip */}
+        {tabletPortrait ? (
+        <div className="flex shrink-0 flex-col gap-1.5">
+          {renderCategoryPills()}
+          <div
+            ref={stripRef}
+            className="flex gap-1 overflow-x-auto rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {activeCategoryChars.map((ch) => renderCharCell(ch, { trackActive: true }))}
+          </div>
+        </div>
+        ) : null}
+        {/* Desktop 3-column grid (approved layout, desktop only) */}
+        {isDesktop ? (
         <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden sm:gap-3 md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_220px] xl:grid-cols-[260px_minmax(0,1fr)_240px] lg:px-2">
-          {/* Left Sidebar (tablet + desktop) */}
-          <aside className="hidden h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm md:flex">
+          {/* Left Sidebar (desktop composition only) */}
+          <aside className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm">
             {/* Categories */}
             <div className="flex flex-col gap-2 p-3">
               {(
@@ -1410,93 +1684,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             {/* Bottom motivational removed as requested */}
           </aside>
 
-          {/* Center Canvas */}
-          <main className="flex min-h-[300px] min-w-0 flex-1 flex-col items-center justify-center sm:min-h-[400px] md:min-h-[440px] lg:min-h-0">
-            <div className="flex w-full min-w-0 max-w-full flex-1 flex-col items-center rounded-2xl border border-[#E8E8E3] bg-white shadow-sm sm:rounded-3xl lg:max-w-[min(100%,920px)] xl:max-w-[min(100%,980px)] 2xl:max-w-[min(100%,1040px)]">
-              {/* Canvas header */}
-              <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900 shadow-sm sm:h-12 sm:w-12 sm:text-3xl">
-                    {character.char}
-                  </span>
-                  {isCompleted ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-800">
-                      <Check className="h-3 w-3" /> Completed
-                    </span>
-                  ) : null}
-                </div>
-              </div>
+          {/* Center Canvas (shared renderer — identical in every mode) */}
+          {renderCanvasMain(false)}
 
-              {/* Canvas card */}
-              <div className="relative flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden p-2 sm:p-3 lg:p-4">
-                {variantToDelete !== null ? (
-                  <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 shadow-sm">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    <span>Delete this variant? Your handwriting in it will be permanently removed.</span>
-                    <button type="button" onClick={() => setVariantToDelete(null)} className="rounded-full border border-rose-200 bg-white px-2 py-0.5 font-medium">Cancel</button>
-                    <button type="button" onClick={performVariantDelete} className="rounded-full bg-rose-700 px-2 py-0.5 font-medium text-white">Delete</button>
-                  </div>
-                ) : null}
-                {validationMsg ? (
-                  <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 shadow-sm">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    <span>{validationMsg}</span>
-                    <button type="button" onClick={() => setValidationMsg(null)} className="rounded-full border border-rose-200 bg-white px-2 py-0.5 font-medium">OK</button>
-                  </div>
-                ) : null}
-
-                {/* Top-right creative note */}
-                {/* Creative note removed as requested */}
-
-                {/* Canvas stage */}
-                <div
-                  ref={containerRef}
-                  className="relative m-auto flex min-h-0 w-full min-w-0 items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
-                  style={{
-                    overflow: "hidden",
-                    aspectRatio: "1 / 1",
-                    // Keep the square writing surface inside the available
-                    // viewport height (header + toolbar + padding accounted
-                    // for) so it never touches the header or action bar and
-                    // never stretches — it only ever shrinks to fit.
-                    maxWidth: "min(100%, max(280px, calc(100dvh - 340px)))",
-                    maxHeight: "100%",
-                  }}
-                >
-                  {isEraser && eraserPos ? (
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none fixed z-30 rounded-full border-2 border-neutral-400 bg-neutral-200/40 backdrop-blur-sm"
-                      style={{
-                        left: eraserPos.x - eraserSize / 2,
-                        top: eraserPos.y - eraserSize / 2,
-                        width: eraserSize,
-                        height: eraserSize,
-                      }}
-                    />
-                  ) : null}
-                  <canvas
-                    ref={canvasRef}
-                    tabIndex={-1}
-                    onPointerDown={startDrawing}
-                    onPointerMove={moveDrawing}
-                    onPointerUp={endDrawing}
-                    onPointerCancel={handlePointerCancel}
-                    className="block h-full w-full max-w-full touch-none cursor-crosshair focus:outline-none"
-                    style={{ touchAction: "none" }}
-                  />
-                  {/* Bottom canvas message */}
-                  <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
-                    <span className="text-[9px] uppercase tracking-[0.32em] text-neutral-300 sm:text-[10px]">WRITE NATURALLY</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </main>
-
-          {/* Right Tool Panel */}
+          {/* Right Tool Panel (desktop composition only) */}
           <aside
-            className="hidden h-full w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:flex-col"
+            className="flex h-full w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex-col"
             style={{ overflow: "hidden" }}
           >
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -1665,11 +1858,23 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             </div>
           </aside>
         </div>
+        ) : null}
 
         {/* Character strip removed as requested */}
 
-        {/* Mobile / tablet compact toolbar (canvas stays the hero; details live in sheets) */}
-        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {tabletLandscape ? (
+        <div className="flex min-h-0 w-full flex-1 gap-2 overflow-hidden">
+          {renderCompactSidebar()}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{renderCanvasMain(false)}</div>
+          {renderToolRail()}
+        </div>
+        ) : (
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">{renderCanvasMain(true)}</div>
+        )}
+
+        {/* Compact toolbar (mobile + tablet compositions only) */}
+        {mode !== "desktop" ? (
+        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
             onClick={() => setToolMode("pen")}
@@ -1725,6 +1930,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             <MoreHorizontal className="h-4 w-4" /> More
           </button>
         </div>
+        ) : null}
 
         {/* Bottom Action Bar */}
         <div
@@ -1803,13 +2009,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       {/* Mobile / tablet bottom sheets (same state + handlers as desktop panel) */}
       {mobileSheet ? (
         <div
-          className="fixed inset-0 z-[55] bg-neutral-900/30 lg:hidden"
+          className="tm-fade fixed inset-0 z-[55] bg-neutral-900/30"
           onClick={() => setMobileSheet(null)}
           aria-hidden="true"
         />
       ) : null}
       {mobileSheet ? (
-        <div className="fixed inset-x-3 bottom-28 z-[60] rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-xl sm:inset-x-6 lg:hidden">
+                <div className="tm-sheet fixed inset-x-3 bottom-28 z-[60] rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-xl sm:inset-x-6">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-900">{sheetTitle}</span>
             <button
@@ -2079,7 +2285,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       />
 
       {showQuality && quality ? (
-        <div className="absolute bottom-4 left-1/2 z-20 w-[min(92vw,320px)] -translate-x-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
+        <div className="tm-pop absolute bottom-4 left-1/2 z-20 w-[min(92vw,320px)] -translate-x-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-900">Quality: {quality.status}</span>
             <button type="button" onClick={() => setShowQuality(false)} className="text-neutral-400 hover:text-neutral-600">
@@ -2096,7 +2302,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       ) : null}
 
       {showShortcuts ? (
-        <div className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
+        <div className="tm-pop absolute left-1/2 top-1/2 z-30 w-[min(92vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-900">Shortcuts</span>
             <button type="button" onClick={() => setShowShortcuts(false)} className="text-neutral-400 hover:text-neutral-600">

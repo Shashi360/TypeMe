@@ -260,6 +260,59 @@
   }
 }
 
+/* Editor sheets + modals: polished enter animation (enter-only; unmount is
+   instant). Respects prefers-reduced-motion via the block below. */
+.tm-sheet {
+  animation: tm-sheet-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-fade {
+  animation: tm-fade-in 0.25s ease both;
+}
+
+.tm-pop {
+  animation: tm-pop-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes tm-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tm-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tm-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-sheet,
+  .tm-fade,
+  .tm-pop {
+    animation: none;
+  }
+}
+
 /* Mobile home: handwriting underline draw loop (lightweight SVG). */
 .tm-mhome-draw {
   stroke-dasharray: 210;
