@@ -16,7 +16,7 @@ const SAMPLE = [0.02, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 0.99];
 /* ---------------------------------------------------------------- desktop */
 {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+  await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 
   for (const prog of SAMPLE) {
     await page.evaluate((p) => {
@@ -93,7 +93,7 @@ const SAMPLE = [0.02, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 0.99];
 /* ----------------------------------------------------------------- mobile */
 {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+  await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 
   /* Sample while the story cards are still on screen. Past that the section is
      scrolling away, so a pinned header is not expected to still be visible. */
@@ -148,7 +148,7 @@ const SAMPLE = [0.02, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 0.99];
 /* ------------------------------------------------------------- reduced */
 {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
-  await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+  await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
   const r = await page.evaluate(() => {
     const heads = Array.from(document.querySelectorAll('#where-to-use .tm-headline'));
     const rendered = heads.filter((h) => h.getBoundingClientRect().height > 0);

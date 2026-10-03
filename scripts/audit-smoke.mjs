@@ -22,7 +22,7 @@ for (const [w, h, label] of [
   });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message.slice(0, 160)));
 
-  await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+  await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
   await page.locator('#where-to-use').scrollIntoViewIfNeeded();
   await page.waitForTimeout(900);
 

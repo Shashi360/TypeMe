@@ -4,7 +4,7 @@
 const { chromium } = await import('playwright');
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 
 const seek = async (prog) => {
   await page.evaluate((p) => {

@@ -61,7 +61,7 @@ const openEditor = async (page) => {
     },
     [USER, PROJECT],
   );
-  await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+  await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 
   // The dashboard can be mid-hydration; retry the project entry until the
   // workspace character grid is actually mounted.

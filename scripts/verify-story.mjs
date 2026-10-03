@@ -5,7 +5,7 @@
 const { chromium } = await import('playwright');
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 
 const results = [];
 const check = (name, pass, detail = '') => {
@@ -123,7 +123,7 @@ check('connector is a thin line', connector.every((c) => c.width <= 1), `width=$
 
 /* Reduced motion: sticky stage hidden, stacked cards visible, no clipping. */
 const rm = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
-await rm.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+await rm.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 await rm.locator('#where-to-use').scrollIntoViewIfNeeded();
 await rm.waitForTimeout(500);
 const rmState = await rm.evaluate(() => {
@@ -145,7 +145,7 @@ check('reduced: no horizontal overflow', rmState.docOverflow <= 1, `overflow=${r
 
 /* Reduced motion must also be clean on a phone width. */
 const rmm = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
-await rmm.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+await rmm.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 await rmm.locator('#where-to-use').scrollIntoViewIfNeeded();
 await rmm.waitForTimeout(400);
 const rmMobileState = await rmm.evaluate(() => ({

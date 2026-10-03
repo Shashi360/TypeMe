@@ -19,7 +19,7 @@ for (const width of WIDTHS) {
   const page = await browser.newPage({ viewport: { width, height: HEIGHT } });
   const reduced = process.argv.includes('--reduced');
   if (reduced) await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+  await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 
   const section = page.locator('#where-to-use');
   await section.scrollIntoViewIfNeeded();

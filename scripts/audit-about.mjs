@@ -26,7 +26,7 @@ for (const [w, h, label] of VIEWPORTS) {
   });
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+  await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
   await page.waitForTimeout(600);
 
   // About Me must live in the footer, not as its own landing section.
