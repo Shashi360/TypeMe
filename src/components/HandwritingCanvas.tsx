@@ -10,7 +10,6 @@ import {
   Edit2,
   Eraser,
   Grip,
-  Lock,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -1052,8 +1051,17 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     return { upper, lower, nums, symbols };
   }, [allChars]);
 
+  // Category counters reflect persisted ink only: the current character is
+  // excluded while it holds unsaved edits, matching the blue-dot rule.
   const getCategoryProgress = (group: CharacterData[]) => {
-    const done = group.filter((c: any) => (c as any)?.completed || (c.strokes?.length ?? 0) > 0).length;
+    const done = group.filter((c: any) => {
+      if ((c as any)?.char === character.char && (isDirty || isSaving)) return false;
+      return (
+        (c as any)?.completed ||
+        (c.strokes?.length ?? 0) > 0 ||
+        ((c as any)?.variants ?? []).some((v: any) => (v?.length ?? 0) > 0)
+      );
+    }).length;
     return { done, total: group.length };
   };
 
@@ -1201,7 +1209,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E3] bg-white text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900"
+            aria-label="Toggle fullscreen"
+            className="hidden h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E3] bg-white text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900 sm:inline-flex"
           >
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
@@ -1275,9 +1284,20 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           >
                 {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
                   const cd = allChars.find((c: unknown) => (c as CharacterData).char === ch);
-                  const done = (cd as { completed?: boolean } | undefined)?.completed || (cd?.strokes?.length ?? 0) > 0;
+                  // Saved = persisted ink in the stored snapshot (main strokes,
+                  // variants, or completed flag). The live canvas is NOT consulted:
+                  // while the current character holds unsaved edits, its dot hides
+                  // until persistence succeeds.
+                  const snapshot = cd as
+                    | { completed?: boolean; strokes?: unknown[]; variants?: unknown[][] }
+                    | undefined;
+                  const done =
+                    !!snapshot?.completed ||
+                    (snapshot?.strokes?.length ?? 0) > 0 ||
+                    (snapshot?.variants ?? []).some((v) => (v?.length ?? 0) > 0);
                   const cur = character.char === ch;
                   const locked = !ent.isCharacterAllowed(ch, done);
+                  const showDot = done && !(cur && (isDirty || isSaving));
                   return (
                     <button
                       key={ch}
@@ -1291,7 +1311,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     >
                       {ch}
                       {locked ? (
-                        <Lock className="absolute bottom-[1px] right-[2px] h-3 w-3 text-neutral-900" />
+                        <Crown
+                          className="pointer-events-none absolute right-[2px] top-[2px] h-3 w-3 text-amber-500"
+                          fill="currentColor"
+                          aria-label="Pro"
+                        />
+                      ) : showDot ? (
+                        <span className="absolute right-[3px] top-[3px] h-[7px] w-[7px] rounded-full bg-blue-600 ring-2 ring-white" />
                       ) : null}
                     </button>
                   );
@@ -1360,9 +1386,20 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               <div className="flex flex-1 flex-wrap content-start justify-start gap-1 overflow-hidden px-3 pb-3">
                 {(category === "uppercase" ? alpha : category === "lowercase" ? alphaLower : category === "numbers" ? digits : symbolsList).map((ch) => {
                   const cd = allChars.find((c: any) => c.char === ch);
-                  const done = (cd as any)?.completed || (cd?.strokes?.length ?? 0) > 0;
+                  // Saved = persisted ink in the stored snapshot (main strokes,
+                  // variants, or completed flag). The live canvas is NOT consulted:
+                  // while the current character holds unsaved edits, its dot hides
+                  // until persistence succeeds.
+                  const snapshot = cd as
+                    | { completed?: boolean; strokes?: unknown[]; variants?: unknown[][] }
+                    | undefined;
+                  const done =
+                    !!snapshot?.completed ||
+                    (snapshot?.strokes?.length ?? 0) > 0 ||
+                    (snapshot?.variants ?? []).some((v) => (v?.length ?? 0) > 0);
                   const cur = character.char === ch;
                   const locked = !ent.isCharacterAllowed(ch, done);
+                  const showDot = done && !(cur && (isDirty || isSaving));
                   return (
                     <button
                       key={ch}
@@ -1375,7 +1412,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     >
                       {ch}
                       {locked ? (
-                        <Lock className="absolute bottom-[1px] right-[2px] h-3 w-3 text-neutral-900" />
+                        <Crown
+                          className="pointer-events-none absolute right-[2px] top-[2px] h-3 w-3 text-amber-500"
+                          fill="currentColor"
+                          aria-label="Pro"
+                        />
+                      ) : showDot ? (
+                        <span className="absolute right-[3px] top-[3px] h-[7px] w-[7px] rounded-full bg-blue-600 ring-2 ring-white" />
                       ) : null}
                     </button>
                   );
