@@ -52,6 +52,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     return () => clearTimeout(timer);
   }, [step, countdown]);
 
+  // Fresh login flow on every open: never resume a previous session's
+  // step/OTP/phone — reopening login must always start at phone entry.
+  useEffect(() => {
+    if (isOpen) {
+      setStep('phone');
+      setPhoneNumber('');
+      setOtp(Array(OTP_POLICY.length).fill(''));
+      setErrorMessage(null);
+      setIsSubmitting(false);
+      setCountdown(OTP_POLICY.resendCooldownSeconds);
+      setE164Phone('');
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleSendOtp = async (e: React.FormEvent) => {
