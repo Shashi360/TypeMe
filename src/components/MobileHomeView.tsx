@@ -293,27 +293,52 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
             aria-label="Get the TypeMe app"
           >
             <div className="flex items-start justify-between">
-              <span className="text-sm font-bold">✦ TypeMe App</span>
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900">
+                  <span className="font-handwriting text-lg font-bold italic text-amber-200">M</span>
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-neutral-900">Get the TypeMe App</p>
+                  <p className="text-[11px] text-neutral-500">A smoother handwriting experience on your device.</p>
+                </div>
+              </div>
               <button type="button" aria-label="Dismiss" onClick={() => setPromptOpen(false)} className="text-neutral-400 hover:text-neutral-700">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-1 text-xs text-neutral-600">
-              A smoother handwriting experience is available in the TypeMe app.
-            </p>
+            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-[#E8E8E3] bg-[#FAFAF7] p-3">
+              <div className="flex h-20 w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-neutral-200 bg-white shadow-sm">
+                <span className="font-handwriting text-2xl font-bold text-neutral-900">A</span>
+                <span className="text-[8px] text-neutral-400">Type your way</span>
+              </div>
+              <ul className="flex flex-col gap-1.5">
+                {["Full screen writing canvas", "Faster experience", "Works offline", "All Pro features"].map((t) => (
+                  <li key={t} className="flex items-center gap-1.5 text-[11px] font-medium text-neutral-700">
+                    <Check className="h-3 w-3 shrink-0 text-emerald-600" strokeWidth={3} /> {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
             <button
               type="button"
               onClick={handleInstall}
-              className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-neutral-900 px-4 text-xs font-semibold text-white"
+              className="mt-3 inline-flex min-h-[48px] w-full items-center justify-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white"
             >
               Install App
             </button>
             <button
               type="button"
               onClick={handleContinueWeb}
-              className="mt-2 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 text-xs font-semibold text-neutral-700"
+              className="mt-2 inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700"
             >
               Continue on Web
+            </button>
+            <button
+              type="button"
+              onClick={() => setPromptOpen(false)}
+              className="mt-1 inline-flex min-h-[40px] w-full items-center justify-center text-xs font-medium text-blue-600"
+            >
+              Not now
             </button>
           </div>
         </div>

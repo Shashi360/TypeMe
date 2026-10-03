@@ -1174,7 +1174,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               </span>
             </div>
           </div>
-          <div className="hidden items-center gap-2.5 rounded-full border border-[#E8E8E3] bg-neutral-50 px-3 py-1.5 lg:flex">
+          <div className="flex items-center gap-1.5 md:hidden">
+            <span className="text-[11px] font-semibold text-neutral-600">
+              {ent.isPro ? `${completedCount}/${totalCount}` : `${completedCount}/${FREE_CHARACTER_SET.length}`}
+            </span>
+            <div className="h-1 w-10 overflow-hidden rounded-full bg-neutral-200">
+              <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progressPct}%` }} />
+            </div>
+          </div>
+          <div className="hidden items-center gap-2.5 rounded-full border border-[#E8E8E3] bg-neutral-50 px-3 py-1.5 md:flex">
             <span className="text-xs font-medium text-neutral-600">
               {ent.isPro
                 ? `${completedCount} / ${totalCount} written`
@@ -1305,7 +1313,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       </header>
 
       {/* Main workspace */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-2 sm:gap-3 sm:p-3 lg:gap-4 lg:overflow-hidden lg:p-4">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-2 sm:gap-3 sm:p-3 md:overflow-hidden lg:gap-4 lg:p-4">
         {/* Mobile character navigator: 4 tabs + letters with saved dots (tablet uses sidebar) */}
         <div className="flex shrink-0 flex-col gap-1.5 rounded-2xl border border-[#E8E8E3] bg-white p-2 shadow-sm md:hidden">
           <div className="grid grid-cols-4 gap-1.5">
@@ -1344,7 +1352,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
         </div>
         {/* Top row: sidebar + canvas + tools */}
-        <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden sm:gap-3 md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_220px] xl:grid-cols-[260px_minmax(0,1fr)_240px] lg:px-2">
+        <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden sm:gap-3 md:grid-cols-[200px_minmax(0,1fr)_176px] lg:grid-cols-[240px_minmax(0,1fr)_220px] xl:grid-cols-[260px_minmax(0,1fr)_240px] lg:px-2">
           {/* Left Sidebar (tablet + desktop) */}
           <aside className="hidden h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm md:flex">
             {/* Categories */}
@@ -1427,8 +1435,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 </div>
               </div>
 
-              {/* Canvas card */}
-              <div className="relative flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden p-2 sm:p-3 lg:p-4">
+              {/* Canvas card — hugs the stage on small screens so no dead
+                  space pools inside the card; desktop keeps the fill. */}
+              <div className="relative flex min-h-0 w-full min-w-0 max-w-full flex-none flex-col overflow-hidden p-2 sm:p-3 lg:flex-1 lg:p-4">
                 {variantToDelete !== null ? (
                   <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 shadow-sm">
                     <AlertCircle className="h-3.5 w-3.5" />
@@ -1494,16 +1503,16 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             </div>
           </main>
 
-          {/* Right Tool Panel */}
+          {/* Right Tool Panel — compact stacked on tablet, grid on desktop */}
           <aside
-            className="hidden h-full w-full min-h-0 flex-col gap-2 sm:gap-3 lg:flex lg:flex-col"
+            className="hidden h-full w-full min-h-0 flex-col gap-2 sm:gap-3 md:flex md:flex-col"
             style={{ overflow: "hidden" }}
           >
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#E8E8E3] bg-white shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-[#E8E8E3] bg-white shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {/* Pen/Eraser */}
-              <div className="flex flex-col gap-2 p-3">
+              <div className="flex flex-col gap-2 p-2 lg:p-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Tool</span>
-                <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-[#E8E8E3] bg-neutral-50 p-1">
+                <div className="grid grid-cols-1 gap-1.5 rounded-xl border border-[#E8E8E3] bg-neutral-50 p-1 lg:grid-cols-2">
                   <button
                     type="button"
                     onClick={() => setToolMode("pen")}
@@ -1542,9 +1551,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               </div>
 
               {/* Brush */}
-              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-3">
+              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-2 lg:p-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Brush</span>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
                   {(["gel", "fountain", "marker", "pencil"] as BrushType[]).map((b) => (
                     <button
                       key={b}
@@ -1563,9 +1572,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               </div>
 
               {/* Stroke Size */}
-              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-3">
+              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-2 lg:p-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Stroke Size</span>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-3">
                   {(["fine", "regular", "bold"] as StrokeSize[]).map((s) => (
                     <button
                       key={s}
@@ -1588,9 +1597,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               </div>
 
               {/* Canvas Style */}
-              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-3">
+              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-2 lg:p-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Canvas Style</span>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
                   {(["typography", "notebook", "dots", "blank"] as CanvasStyle[]).map((style) => (
                     <button
                       key={style}
@@ -1608,7 +1617,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               </div>
 
               {/* Variant */}
-              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-3">
+              <div className="flex flex-col gap-2 border-t border-[#E8E8E3] p-2 lg:p-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Variant</span>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
@@ -1695,7 +1704,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               mobileSheet === "brush" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
             }`}
           >
-            <Brush className="h-4 w-4" /> {brushType}
+            <Brush className="h-4 w-4" /> Brush
           </button>
           <button
             type="button"
@@ -1704,7 +1713,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               mobileSheet === "size" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
             }`}
           >
-            <Ruler className="h-4 w-4" /> {strokeSize}
+            <Ruler className="h-4 w-4" /> Size
           </button>
           <button
             type="button"
@@ -1713,7 +1722,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               mobileSheet === "style" ? "border-neutral-900 bg-neutral-900 text-white" : "border-[#E8E8E3] bg-white text-neutral-700"
             }`}
           >
-            <AlignJustify className="h-4 w-4" /> {canvasStyle}
+            <AlignJustify className="h-4 w-4" /> Style
           </button>
           <button
             type="button"
@@ -1728,7 +1737,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
         {/* Bottom Action Bar */}
         <div
-          className="flex shrink-0 flex-col gap-2 rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-3 sm:py-2.5"
+          className="flex shrink-0 flex-row items-center justify-between gap-1.5 rounded-2xl border border-[#E8E8E3] bg-white px-2 py-2 shadow-sm sm:gap-2 sm:px-3 sm:py-2.5"
           style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
         >
           <div className="flex items-center justify-center gap-1.5 sm:justify-start">
@@ -1736,7 +1745,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               type="button"
               onClick={undo}
               disabled={undoStack.length === 0}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40 sm:px-2.5"
             >
               <RotateCcw className="h-3.5 w-3.5" /> Undo
             </button>
@@ -1744,7 +1753,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               type="button"
               onClick={redo}
               disabled={redoStack.length === 0}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40 sm:px-2.5"
             >
               <RotateCw className="h-3.5 w-3.5" /> Redo
             </button>
@@ -1752,7 +1761,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               type="button"
               onClick={clear}
               disabled={activeStrokes.length === 0}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E8E8E3] bg-white px-2 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 sm:px-2.5"
             >
               <Trash2 className="h-3.5 w-3.5" /> Clear
             </button>
@@ -1772,7 +1781,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center justify-center gap-1.5 sm:justify-end">
+          <div className="flex flex-1 items-center justify-end gap-1.5 sm:flex-none">
             {hasPrevious && onPrevious ? (
               <button
                 type="button"

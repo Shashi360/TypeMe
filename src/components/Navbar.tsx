@@ -23,6 +23,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  // The drawer stays mounted for the 300ms slide-out, then unmounts so the
+  // off-canvas element can never expand the page's scrollable area.
+  const [drawerMounted, setDrawerMounted] = useState(false);
+
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      setDrawerMounted(true);
+      return;
+    }
+    const t = window.setTimeout(() => setDrawerMounted(false), 320);
+    return () => window.clearTimeout(t);
+  }, [mobileMenuOpen]);
 
   // Smooth drawer behavior: lock body scroll + close on Escape.
   useEffect(() => {
@@ -294,7 +306,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile overlay */}
+      {/* Mobile overlay + drawer (unmounted when fully closed) */}
+      {drawerMounted ? (
+      <>
       <div
         aria-hidden={!mobileMenuOpen}
         onClick={() => setMobileMenuOpen(false)}
@@ -436,6 +450,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
       </div>
+      </>
+      ) : null}
     </header>
   );
 };

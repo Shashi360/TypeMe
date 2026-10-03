@@ -29,7 +29,7 @@ import {
   ArrowLeft,
   FileCheck,
   Download,
-  Lock,
+  Crown,
 } from 'lucide-react';
 
 interface WorkspaceViewProps {
@@ -256,7 +256,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       </div>
 
       {/* 4. Character Grid */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 sm:gap-4">
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 sm:gap-4">
         {currentChars.map((def) => {
           const charData = project.characters[def.char] || {
             char: def.char,
@@ -280,7 +280,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   ? `Edit ${def.char}, ${charData.strokes.length} strokes`
                   : `Write ${def.char}`
               }
-              className={`relative aspect-square rounded-xl border bg-white p-3 flex flex-col justify-between text-left cursor-pointer transition-all hover:scale-[1.02] shadow-2xs group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 ${
+              className={`relative aspect-square overflow-hidden rounded-xl border bg-white p-2 sm:p-3 flex flex-col justify-between text-left cursor-pointer transition-all hover:scale-[1.02] shadow-2xs group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 ${
                 hasStrokes
                   ? 'border-neutral-200 hover:border-neutral-900'
                   : 'border-dashed border-neutral-300 hover:border-neutral-500 bg-neutral-50/40'
@@ -293,7 +293,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 </span>
 
                 {locked ? (
-                  <Lock className="w-3 h-3 text-neutral-400" />
+                  <Crown className="w-3 h-3 text-amber-500" fill="currentColor" aria-label="Pro" />
                 ) : hasStrokes ? (
                   charData.qualityStatus === 'warning' ? (
                     <AlertTriangle className="w-3 h-3 text-amber-500" />
@@ -306,11 +306,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               </div>
 
               {/* Card Center: SVG Stroke Preview or Empty Prompt */}
-              <div className="flex-1 flex items-center justify-center my-1 overflow-hidden">
+              <div className="flex-1 min-h-0 flex items-center justify-center my-0.5 sm:my-1 overflow-hidden">
                 {hasStrokes ? (
                   <svg
                     viewBox="0 0 400 400"
-                    className="w-full h-full max-h-[70px] stroke-neutral-900"
+                    className="w-full h-full max-h-10 sm:max-h-[70px] stroke-neutral-900"
                     style={{ strokeLinecap: 'round', strokeLinejoin: 'round' }}
                   >
                     {/* Faint baseline guideline in thumbnail */}
@@ -351,8 +351,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   </svg>
                 ) : (
                   <div className="flex flex-col items-center justify-center text-neutral-300 group-hover:text-neutral-600 transition-colors">
-                    <PenTool className="w-4 h-4 mb-1" />
-                    <span className="text-[10px] font-medium">Write {def.char}</span>
+                    <PenTool className="w-3.5 h-3.5 sm:w-4 sm:h-4 mb-0.5 sm:mb-1" />
+                    <span className="text-[9px] sm:text-[10px] font-medium">Write {def.char}</span>
                   </div>
                 )}
               </div>

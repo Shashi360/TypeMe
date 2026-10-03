@@ -63,30 +63,30 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             </li>
           ))}
         </ul>
-        <div className="mt-4 flex items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-          <div>
-            <span className="block font-serif text-sm font-bold text-neutral-900">TypeMe Pro</span>
-            <span className="font-mono text-[11px] text-neutral-500">Cancel anytime</span>
-          </div>
-          <span className="font-serif text-xl font-bold text-neutral-900">
-            ₹99 <span className="font-sans text-xs font-normal text-neutral-500">/mo</span>
+        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/60">
+            <Crown className="h-4 w-4 text-amber-900" fill="currentColor" />
           </span>
+          <div>
+            <span className="block text-sm font-bold text-neutral-900">TypeMe Pro</span>
+            <span className="text-xs font-semibold text-neutral-700">₹99 / month</span>
+          </div>
         </div>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-col gap-2">
           <button
             type="button"
             onClick={() => {
               onClose();
               onUpgrade?.();
             }}
-            className="flex-1 cursor-pointer rounded-xl bg-neutral-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-neutral-800"
+            className="min-h-[48px] w-full cursor-pointer rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-800"
           >
             Upgrade to Pro
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 cursor-pointer rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-50"
+            className="min-h-[48px] w-full cursor-pointer rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-50"
           >
             Maybe Later
           </button>
