@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FontProject, User, AppView, Stroke, LegalDoc } from './types';
 import {
   createInitialSampleProject,
@@ -56,6 +56,41 @@ export default function App() {
   const [currentView, setCurrentView] = useState<AppView>(() => {
     return user ? 'dashboard' : 'landing';
   });
+
+  // Browser back/forward moves through app views instead of leaving the app.
+  const historyInit = useRef(false);
+  const popNavigating = useRef(false);
+  useEffect(() => {
+    // State changes caused by back/forward must not push a new entry,
+    // or the forward stack would be destroyed.
+    if (popNavigating.current) {
+      popNavigating.current = false;
+      return;
+    }
+    const state = { view: currentView, projectId: activeProjectId };
+    try {
+      if (!historyInit.current) {
+        historyInit.current = true;
+        window.history.replaceState(state, '');
+      } else {
+        window.history.pushState(state, '');
+      }
+    } catch {
+      // ignore (non-browser contexts)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentView]);
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const s = e.state as { view?: AppView; projectId?: string } | null;
+      if (!s || !s.view) return;
+      popNavigating.current = true;
+      if (s.projectId) setActiveProjectId(s.projectId);
+      setCurrentView(s.view);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   // Modals state
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -160,9 +195,11 @@ export default function App() {
     } catch {}
   };
 
+  const [deleteBlocked, setDeleteBlocked] = useState(false);
+
   const handleDeleteProject = (projectId: string) => {
     if (projects.length <= 1) {
-      alert('You must have at least one font project in your workspace.');
+      setDeleteBlocked(true);
       return;
     }
     const updated = projects.filter((p) => p.id !== projectId);
@@ -478,6 +515,34 @@ export default function App() {
         onClose={() => setAuthModalOpen(false)}
         onSuccess={handleAuthSuccess}
       />
+
+      {/* Cannot-delete-last-font notice */}
+      {deleteBlocked ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 p-4 backdrop-blur-sm sm:items-center"
+          onClick={() => setDeleteBlocked(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Cannot delete font"
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-serif text-xl font-bold text-neutral-900">Keep at least one font</h3>
+            <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+              This is your last font project, so it can't be deleted. Create a new font first, then delete this one if you like.
+            </p>
+            <button
+              type="button"
+              onClick={() => setDeleteBlocked(false)}
+              className="mt-4 inline-flex min-h-[48px] w-full items-center justify-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-neutral-800"
+            >
+              Okay
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Onboarding Modal ("What should we call your font?") */}
       <OnboardingModal

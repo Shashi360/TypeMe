@@ -42,17 +42,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [editNameValue, setEditNameValue] = useState('');
   const [pendingDelete, setPendingDelete] = useState<FontProject | null>(null);
 
-  // Compute metrics across projects
-  const myFontsCount = Math.max(projects.length, 3);
-  const totalCharacters = Math.max(
-    projects.reduce((acc, p) => acc + (p.characterCount || 0), 0),
-    104
-  );
-  const generatedCount = Math.max(
-    projects.filter((p) => p.status === 'generated').length,
-    2
-  );
-  const downloadsCount = Math.max(user.totalDownloads || 0, 6);
+  // Compute metrics across projects (always real counts, never demo floors)
+  const myFontsCount = projects.length;
+  const totalCharacters = projects.reduce((acc, p) => acc + (p.characterCount || 0), 0);
+  const generatedCount = projects.filter((p) => p.status === 'generated').length;
+  const downloadsCount = user.totalDownloads || 0;
 
   // Filter & sort
   const filteredProjects = projects

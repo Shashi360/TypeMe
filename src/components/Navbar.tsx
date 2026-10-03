@@ -172,12 +172,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Dashboard
               </button>
               <button
-                onClick={() => handleNavClick('dashboard')}
-                className="hover:text-neutral-900 transition-colors cursor-pointer"
-              >
-                My Fonts
-              </button>
-              <button
                 onClick={onStartNewFont}
                 className="hover:text-neutral-900 transition-colors cursor-pointer text-neutral-900 font-semibold"
               >
@@ -257,7 +251,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className="w-full text-left px-3 py-2 hover:bg-neutral-50 flex items-center gap-2 cursor-pointer"
                   >
                     <FolderOpen className="w-3.5 h-3.5 text-neutral-500" />
-                    <span>My Fonts</span>
+                    <span>Dashboard</span>
                   </button>
                   <button
                     onClick={() => {
@@ -415,12 +409,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
               >
                 Dashboard
-              </button>
-              <button
-                onClick={() => handleNavClick('dashboard')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
-              >
-                My Fonts
               </button>
               <button
                 onClick={() => {
