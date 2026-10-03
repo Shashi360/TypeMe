@@ -192,19 +192,25 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
               <button
                 onClick={() => handleNavClick('explore')}
-                className="hover:text-neutral-900 transition-colors cursor-pointer"
+                className={`transition-colors cursor-pointer ${
+                  currentView === 'explore' ? 'text-neutral-900 font-semibold' : 'hover:text-neutral-900'
+                }`}
               >
                 Styles
               </button>
               <button
                 onClick={() => handleNavClick('learn')}
-                className="hover:text-neutral-900 transition-colors cursor-pointer"
+                className={`transition-colors cursor-pointer ${
+                  currentView === 'learn' ? 'text-neutral-900 font-semibold' : 'hover:text-neutral-900'
+                }`}
               >
                 Learn
               </button>
               <button
                 onClick={() => handleNavClick('pricing')}
-                className="hover:text-neutral-900 transition-colors cursor-pointer"
+                className={`transition-colors cursor-pointer ${
+                  currentView === 'pricing' ? 'text-neutral-900 font-semibold' : 'hover:text-neutral-900'
+                }`}
               >
                 Plans
               </button>
@@ -263,9 +269,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setUserDropdownOpen(false);
                       handleNavClick('dashboard');
                     }}
-                    className="w-full text-left px-3 py-2 hover:bg-neutral-50 flex items-center gap-2 cursor-pointer"
+                    className={`w-full text-left px-3 py-2 flex items-center gap-2 cursor-pointer ${
+                      currentView === 'dashboard'
+                        ? 'bg-neutral-900 text-white font-semibold'
+                        : 'hover:bg-neutral-50'
+                    }`}
                   >
-                    <FolderOpen className="w-3.5 h-3.5 text-neutral-500" />
+                    <FolderOpen className={`w-3.5 h-3.5 ${currentView === 'dashboard' ? 'text-white' : 'text-neutral-500'}`} />
                     <span>Dashboard</span>
                   </button>
                   <button
@@ -428,7 +438,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <>
               <button
                 onClick={() => handleNavClick('dashboard')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium ${
+                  currentView === 'dashboard'
+                    ? 'bg-neutral-900 text-white'
+                    : 'hover:bg-neutral-50'
+                }`}
               >
                 Dashboard
               </button>
@@ -443,7 +457,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
               <button
                 onClick={() => handleNavClick('pricing')}
-                className="w-full text-left py-2 px-3 rounded-lg hover:bg-neutral-50 font-medium"
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium ${
+                  currentView === 'pricing'
+                    ? 'bg-neutral-900 text-white'
+                    : 'hover:bg-neutral-50'
+                }`}
               >
                 Plans
               </button>

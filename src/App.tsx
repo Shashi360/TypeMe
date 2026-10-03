@@ -47,15 +47,63 @@ export default function App() {
     return [createInitialSampleProject(), createArchitectSampleProject()];
   });
 
-  // Active project ID
+  // Active project ID (restored after refresh when still present)
   const [activeProjectId, setActiveProjectId] = useState<string>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('typeme_nav') || 'null') as {
+        projectId?: string;
+      } | null;
+      if (saved?.projectId && projects.some((p) => p.id === saved.projectId)) {
+        return saved.projectId as string;
+      }
+    } catch {
+      // ignore
+    }
     return projects[0]?.id || '';
   });
 
-  // Navigation state
+  // Navigation state (restored after refresh so reloads stay on the same page)
   const [currentView, setCurrentView] = useState<AppView>(() => {
-    return user ? 'dashboard' : 'landing';
+    if (!user) return 'landing';
+    try {
+      const saved = JSON.parse(localStorage.getItem('typeme_nav') || 'null') as {
+        view?: AppView;
+      } | null;
+      const restorable: AppView[] = [
+        'dashboard',
+        'workspace',
+        'review',
+        'preview',
+        'download',
+        'pricing',
+        'learn',
+        'explore',
+        'gallery',
+        'legal',
+        'landing',
+      ];
+      if (saved?.view && restorable.includes(saved.view)) return saved.view;
+    } catch {
+      // ignore
+    }
+    return 'dashboard';
   });
+
+  // Persist navigation so a refresh restores the same view + project.
+  useEffect(() => {
+    try {
+      if (user) {
+        localStorage.setItem(
+          'typeme_nav',
+          JSON.stringify({ view: currentView, projectId: activeProjectId })
+        );
+      } else {
+        localStorage.removeItem('typeme_nav');
+      }
+    } catch {
+      // ignore
+    }
+  }, [user, currentView, activeProjectId]);
 
   // Browser back/forward moves through app views instead of leaving the app.
   const historyInit = useRef(false);
