@@ -70,48 +70,55 @@ export const getEntitlements = (tier?: string | null): Entitlements => {
 export interface UpgradeCopy {
   feature: string;
   description: string;
-  /** Three checkmark bullets shown in the upgrade modal. */
+  /** Checkmark bullets shown in the upgrade modal. */
   bullets?: string[];
 }
+
+const PRO_GENERAL = [
+  "Full character set",
+  "All brushes & stroke sizes",
+  "Full font generation",
+  "TTF download",
+];
 
 export const upgradeForBrush = (brush: string): UpgradeCopy => ({
   feature: `${brush.charAt(0).toUpperCase() + brush.slice(1)} brush`,
   description:
     "Create elegant variable-width handwriting strokes with Pro.",
-  bullets: ["All 4 brush styles", "More natural handwriting", "Advanced font creation"],
+  bullets: ["All 4 brush styles", "More natural handwriting", "Advanced font creation", ...PRO_GENERAL.slice(2)],
 });
 
 export const upgradeForStrokeSize = (size: string): UpgradeCopy => ({
   feature: `${size.charAt(0).toUpperCase() + size.slice(1)} stroke`,
   description:
     "Extra stroke weights are a Pro feature. Upgrade to TypeMe Pro to unlock Fine, Regular and Bold.",
-  bullets: ["Fine, Regular and Bold weights", "More natural handwriting", "Advanced font creation"],
+  bullets: ["Fine, Regular and Bold weights", "More natural handwriting", ...PRO_GENERAL.slice(2)],
 });
 
 export const upgradeForCanvasStyle = (style: string): UpgradeCopy => ({
   feature: `${style.charAt(0).toUpperCase() + style.slice(1)} canvas`,
   description:
     "Extra canvas styles are a Pro feature. Upgrade to TypeMe Pro to unlock Typography, Notebook, Dots and Blank.",
-  bullets: ["All 4 canvas styles", "Guides that match your flow", "Advanced font creation"],
+  bullets: ["All 4 canvas styles", "Guides that match your flow", ...PRO_GENERAL.slice(2)],
 });
 
 export const upgradeForVariants: UpgradeCopy = {
   feature: "Alternate variants",
   description:
     "Pro lets you create up to 4 styles per character (Main + 3 alternates). Upgrade to TypeMe Pro to unlock variants.",
-  bullets: ["Up to 4 styles per character", "Richer, more natural fonts", "Advanced font creation"],
+  bullets: ["Up to 4 styles per character", "Richer, more natural fonts", "Advanced font creation", "TTF download"],
 };
 
 export const upgradeForCharacters: UpgradeCopy = {
   feature: "Full character set",
   description:
     "Free includes 20 starter characters (A–T). Upgrade to TypeMe Pro to unlock all 82+ glyphs — lowercase, numbers and symbols.",
-  bullets: ["All 82+ glyphs", "Lowercase, numbers & symbols", "Complete font generation"],
+  bullets: ["All 82+ glyphs", "Lowercase, numbers & symbols", "More variants", "Full font generation", "TTF download"],
 };
 
 export const upgradeForDownload: UpgradeCopy = {
   feature: "Font downloads",
   description:
     "Your font is ready. Upgrade to TypeMe Pro (₹99/month) to download your TTF font file.",
-  bullets: ["TTF font download", "Install on any device", "Complete font generation"],
+  bullets: ["TTF font download", "Install on any device", "Complete font generation", "Advanced processing"],
 };

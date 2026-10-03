@@ -664,5 +664,78 @@
   }
 }
 
+/* ===========================================================================
+   App-like enter animations for editor sheets, modals, popups, and the
+   saved-state dot. Enter-only (unmount is instant) — fast and subtle so
+   drawing performance is never affected.
+   =========================================================================== */
+
+.tm-fade {
+  animation: tm-fade-in 0.22s ease both;
+}
+
+.tm-sheet {
+  animation: tm-sheet-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-pop {
+  animation: tm-pop-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tm-dot-pop {
+  animation: tm-dot-pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes tm-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tm-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tm-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tm-dot-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-fade,
+  .tm-sheet,
+  .tm-pop,
+  .tm-dot-pop {
+    animation: none;
+  }
+}
+
 
 

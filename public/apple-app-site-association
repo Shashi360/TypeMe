@@ -1,0 +1,12 @@
+{
+  "_note": "PLACEHOLDER — TypeMe has no published iOS app yet, so this file associates nothing. To enable Universal Links: publish the app, then replace TEAMID-REPLACE_ME and BUNDLEID-REPLACE_ME with the real Apple Team ID and bundle identifier (format TEAMID.BUNDLEID). Serve this file at https://<domain>/.well-known/apple-app-site-association with NO .json extension and content-type application/json. Until then, TypeMe web links stay in the browser by design (see src/utils/appHandoff.ts).",
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID-REPLACE_ME.BUNDLEID-REPLACE_ME",
+        "paths": ["/editor/*", "/preview/*", "/create*"]
+      }
+    ]
+  }
+}

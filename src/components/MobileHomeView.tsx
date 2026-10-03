@@ -286,7 +286,7 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
       {promptOpen && installable ? (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 p-4 sm:items-center" onClick={() => setPromptOpen(false)}>
           <div
-            className="w-full max-w-sm rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl"
+            className="tm-pop w-full max-w-sm rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -312,7 +312,7 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
                 <span className="text-[8px] text-neutral-400">Type your way</span>
               </div>
               <ul className="flex flex-col gap-1.5">
-                {["Full screen writing canvas", "Faster experience", "Works offline", "All Pro features"].map((t) => (
+                {["Full screen writing canvas", "Faster experience", "All Pro features"].map((t) => (
                   <li key={t} className="flex items-center gap-1.5 text-[11px] font-medium text-neutral-700">
                     <Check className="h-3 w-3 shrink-0 text-emerald-600" strokeWidth={3} /> {t}
                   </li>

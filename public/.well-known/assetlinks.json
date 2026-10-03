@@ -1,0 +1,11 @@
+[
+  {
+    "_note": "PLACEHOLDER — TypeMe has no published Android app yet, so this file grants nothing. To enable Android App Links: publish the app, then replacedelegate_permission/literal below with the real SHA-256 cert fingerprints and set the package_name to the real applicationId. Keep the file served at https://<domain>/.well-known/assetlinks.json with content-type application/json. Until then, TypeMe web links stay in the browser by design (see src/utils/appHandoff.ts).",
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "REPLACE_ME.typeme.android",
+      "sha256_cert_fingerprints": ["REPLACE_ME_WITH_SHA256_CERT_FINGERPRINT"]
+    }
+  }
+]

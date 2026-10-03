@@ -1176,7 +1176,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             aria-label="Pro"
           />
         ) : showDot ? (
-          <span className="absolute right-[3px] top-[3px] h-[7px] w-[7px] rounded-full bg-blue-600 ring-2 ring-white" />
+                        <span className="tm-dot-pop absolute right-[3px] top-[3px] h-[7px] w-[7px] rounded-full bg-blue-600 ring-2 ring-white" />
         ) : null}
       </button>
     );
@@ -1232,47 +1232,64 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         {/* Center — project name (editable) */}
         <div className="absolute left-1/2 top-1/2 flex max-w-[40vw] -translate-x-1/2 -translate-y-1/2 items-center">
           {editingName ? (
-            <div className="flex items-center gap-1 rounded-full border border-neutral-300 bg-white px-2 py-1 shadow-sm">
-              <input
-                value={nameDraft}
-                autoFocus
-                maxLength={40}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const next = nameDraft.trim();
-                    if (next && onRenameProject) onRenameProject(next);
-                    setEditingName(false);
-                  } else if (e.key === "Escape") {
-                    setNameDraft(projectName);
-                    setEditingName(false);
-                  }
-                }}
-                className="w-28 bg-transparent text-sm font-medium text-neutral-900 outline-none sm:w-44"
-              />
-              <button
-                type="button"
-                aria-label="Save name"
-                onClick={() => {
-                  const next = nameDraft.trim();
-                  if (next && onRenameProject) onRenameProject(next);
-                  setEditingName(false);
-                }}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-white"
+            <div
+              className="tm-fade fixed inset-0 z-[65] flex items-center justify-center bg-neutral-900/40 p-4"
+              onClick={() => {
+                setNameDraft(projectName);
+                setEditingName(false);
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Rename project"
+            >
+              <div
+                className="tm-pop w-full max-w-xs rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
               >
-                <Check className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                aria-label="Cancel rename"
-                onClick={() => {
-                  setNameDraft(projectName);
-                  setEditingName(false);
-                }}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#E8E8E3] text-neutral-500"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+                <span className="text-sm font-bold text-neutral-900">Rename project</span>
+                <input
+                  value={nameDraft}
+                  autoFocus
+                  maxLength={40}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const next = nameDraft.trim();
+                      if (next && onRenameProject) onRenameProject(next);
+                      setEditingName(false);
+                    } else if (e.key === "Escape") {
+                      setNameDraft(projectName);
+                      setEditingName(false);
+                    }
+                  }}
+                  className="mt-3 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900 outline-none focus:border-neutral-900"
+                />
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    aria-label="Save name"
+                    onClick={() => {
+                      const next = nameDraft.trim();
+                      if (next && onRenameProject) onRenameProject(next);
+                      setEditingName(false);
+                    }}
+                    className="min-h-[44px] flex-1 rounded-xl bg-neutral-900 px-4 text-xs font-semibold text-white"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Cancel rename"
+                    onClick={() => {
+                      setNameDraft(projectName);
+                      setEditingName(false);
+                    }}
+                    className="min-h-[44px] flex-1 rounded-xl border border-neutral-200 bg-white px-4 text-xs font-semibold text-neutral-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
             <button
@@ -1862,13 +1879,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       {/* Mobile / tablet bottom sheets (same state + handlers as desktop panel) */}
       {mobileSheet ? (
         <div
-          className="fixed inset-0 z-[55] bg-neutral-900/30 lg:hidden"
+          className="tm-fade fixed inset-0 z-[55] bg-neutral-900/30 lg:hidden"
           onClick={() => setMobileSheet(null)}
           aria-hidden="true"
         />
       ) : null}
       {mobileSheet ? (
-        <div className="fixed inset-x-3 bottom-28 z-[60] rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-xl sm:inset-x-6 lg:hidden">
+        <div className="tm-sheet fixed inset-x-3 bottom-28 z-[60] rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-xl sm:inset-x-6 lg:hidden">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-900">{sheetTitle}</span>
             <button
@@ -1880,7 +1897,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className={`overflow-y-auto ${mobileSheet === "characters" ? "max-h-[62dvh]" : "max-h-[46dvh]"}`}>
+          <div className={`overflow-y-auto ${mobileSheet === "characters" ? "max-h-[78dvh]" : "max-h-[46dvh]"}`}>
             {mobileSheet === "brush" ? (
               <div className="grid grid-cols-2 gap-2">
                 {(["gel", "fountain", "marker", "pencil"] as BrushType[]).map((b) => (
@@ -2138,7 +2155,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       />
 
       {showQuality && quality ? (
-        <div className="absolute bottom-4 left-1/2 z-20 w-[min(92vw,320px)] -translate-x-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
+        <div className="tm-pop absolute bottom-4 left-1/2 z-20 w-[min(92vw,320px)] -translate-x-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-900">Quality: {quality.status}</span>
             <button type="button" onClick={() => setShowQuality(false)} className="text-neutral-400 hover:text-neutral-600">
@@ -2155,7 +2172,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       ) : null}
 
       {showShortcuts ? (
-        <div data-testid="editor-shortcuts" className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
+        <div data-testid="editor-shortcuts" className="tm-pop absolute left-1/2 top-1/2 z-30 w-[min(92vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-900">Shortcuts</span>
             <button type="button" onClick={() => setShowShortcuts(false)} className="text-neutral-400 hover:text-neutral-600">

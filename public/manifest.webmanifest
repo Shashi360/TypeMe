@@ -1,0 +1,19 @@
+{
+  "name": "TypeMe — Turn Handwriting Into a Font",
+  "short_name": "TypeMe",
+  "description": "Write once, type everywhere. Create a font from your own handwriting.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FAFAF7",
+  "theme_color": "#FAFAF7",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

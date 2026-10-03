@@ -32,14 +32,14 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 backdrop-blur-sm sm:items-center sm:p-4"
+      className="tm-fade fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`Upgrade for ${feature}`}
     >
       <div
-        className="relative w-full max-w-sm rounded-t-3xl border border-neutral-200 bg-white p-6 shadow-2xl sm:rounded-3xl"
+        className="tm-pop relative w-full max-w-sm rounded-t-3xl border border-neutral-200 bg-white p-6 shadow-2xl sm:rounded-3xl"
         style={{ marginBottom: "max(0px, env(safe-area-inset-bottom))" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -54,7 +54,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         </div>
         <p className="mt-1 text-xs leading-relaxed text-neutral-600">{description}</p>
         <ul className="mt-3 flex flex-col gap-1.5">
-          {(bullets ?? DEFAULT_BULLETS).slice(0, 3).map((b) => (
+          {(bullets ?? DEFAULT_BULLETS).slice(0, 5).map((b) => (
             <li key={b} className="flex items-center gap-2 text-xs font-medium text-neutral-700">
               <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100">
                 <Check className="h-2.5 w-2.5 text-emerald-700" strokeWidth={3} />
