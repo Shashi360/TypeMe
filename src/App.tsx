@@ -23,7 +23,6 @@ import { LearnView } from './components/LearnView';
 import { StyleExplorerView } from './components/StyleExplorerView';
 import LegalView from './components/LegalView';
 import { unregisterFontUrl } from './utils/fontGenerator';
-import { ensureSupabaseSession } from './utils/supabaseSession';
 import { migrateLocalProjectsToSupabase } from './utils/db';
 
 export default function App() {
@@ -113,12 +112,6 @@ export default function App() {
       // ignore
     }
   }, [user, currentView, activeProjectId]);
-
-  // Supabase session bootstrap (anonymous UID when configured; silent
-  // local-mode fallback otherwise — never blocks rendering or fakes auth).
-  useEffect(() => {
-    ensureSupabaseSession().catch(() => {});
-  }, []);
 
   // Browser back/forward moves through app views instead of leaving the app.
   const historyInit = useRef(false);

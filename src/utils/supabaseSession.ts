@@ -13,10 +13,31 @@
 
 import { getSupabase } from "./supabaseClient";
 
+const DISABLED_FLAG = "sb-anon-unavailable";
+
 let cachedUid: string | null | undefined;
+
+const rememberUnavailable = (): void => {
+  cachedUid = null;
+  try {
+    sessionStorage.setItem(DISABLED_FLAG, "1");
+  } catch {
+    // ignore
+  }
+};
+
+const knownUnavailable = (): boolean => {
+  try {
+    return sessionStorage.getItem(DISABLED_FLAG) === "1";
+  } catch {
+    return false;
+  }
+};
 
 export const ensureSupabaseSession = async (): Promise<string | null> => {
   if (cachedUid !== undefined) return cachedUid;
+  // One failed attempt per session is enough — never spin on a disabled endpoint.
+  if (knownUnavailable()) return null;
   const sb = getSupabase();
   if (!sb) {
     cachedUid = null;
@@ -31,13 +52,13 @@ export const ensureSupabaseSession = async (): Promise<string | null> => {
     }
     const { data: anon, error } = await sb.auth.signInAnonymously();
     if (error || !anon.session?.user) {
-      cachedUid = null;
+      rememberUnavailable();
       return null;
     }
     cachedUid = anon.session.user.id;
     return cachedUid;
   } catch {
-    cachedUid = null;
+    rememberUnavailable();
     return null;
   }
 };

@@ -16,6 +16,7 @@
  */
 
 import { getSupabase } from "./supabaseClient";
+import { ensureSupabaseSession } from "./supabaseSession";
 import type { CharacterData, Stroke } from "../types";
 
 export const NOT_CONFIGURED = "supabase-unconfigured";
@@ -140,6 +141,9 @@ export interface LocalProjectLike {
 export const migrateLocalProjectsToSupabase = async (
   localProjects: LocalProjectLike[],
 ): Promise<number> => {
+  // Establish the backend session first (anonymous UID when enabled).
+  // No session, no migration — local data stays exactly as it is.
+  await ensureSupabaseSession().catch(() => {});
   const sb = getSupabase();
   if (!sb) return 0;
   const uid = await sessionUid().catch(() => null);
