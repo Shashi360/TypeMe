@@ -17,7 +17,8 @@
 
 import { getSupabase } from "./supabaseClient";
 import { ensureSupabaseSession } from "./supabaseSession";
-import type { CharacterData, Stroke } from "../types";
+import type { CharacterData, CharacterCategory, FontProject, Stroke } from "../types";
+import { ALL_CHARACTERS } from "./sampleData";
 
 export const NOT_CONFIGURED = "supabase-unconfigured";
 export const UNAUTHENTICATED = "supabase-unauthenticated";
@@ -230,4 +231,174 @@ export const migrateLocalProjectsToSupabase = async (
     }
   }
   return migrated;
+};
+
+// ---------------------------------------------------------------------------
+// Authenticated dashboard data source. Every function below derives ownership
+// from the live Supabase session (auth.uid() via RLS) — callers never pass a
+// user_id. Without a session each throws UNAUTHENTICATED and the app stays
+// in local/guest mode.
+// ---------------------------------------------------------------------------
+
+export interface DbGlyphRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  character: string;
+  variant_number: number;
+  stroke_data: Stroke[];
+  status: string | null;
+  is_saved: boolean | null;
+  updated_at?: string;
+}
+
+const guessCategory = (ch: string): CharacterCategory => {
+  if (/^[A-Z]$/.test(ch)) return "uppercase";
+  if (/^[a-z]$/.test(ch)) return "lowercase";
+  if (/^[0-9]$/.test(ch)) return "numbers";
+  return "symbols";
+};
+
+/**
+ * Normalize one server project + its glyph rows into the existing FontProject
+ * model. variant_number 0 is the main glyph; 1..n become variants[] in order.
+ */
+export const normalizeServerProject = (
+  row: DbProject,
+  glyphRows: DbGlyphRow[],
+): FontProject => {
+  const mains = new Map<string, DbGlyphRow>();
+  const variantLists = new Map<string, DbGlyphRow[]>();
+  for (const g of glyphRows) {
+    if (!g || typeof g.character !== "string") continue;
+    if ((g.variant_number ?? 0) === 0) {
+      if (!mains.has(g.character)) mains.set(g.character, g);
+    } else {
+      const list = variantLists.get(g.character) ?? [];
+      list.push(g);
+      variantLists.set(g.character, list);
+    }
+  }
+  const characters: Record<string, CharacterData> = {};
+  for (const [ch, main] of mains) {
+    const strokes = Array.isArray(main.stroke_data) ? main.stroke_data : [];
+    const variants = (variantLists.get(ch) ?? [])
+      .sort((a, b) => (a.variant_number ?? 0) - (b.variant_number ?? 0))
+      .map((v) => (Array.isArray(v.stroke_data) ? v.stroke_data : []))
+      .filter((s) => s.length > 0);
+    characters[ch] = {
+      char: ch,
+      unicode: ch.codePointAt(0) ?? 0,
+      category: guessCategory(ch),
+      strokes,
+      variants,
+      qualityStatus: strokes.length > 0 ? "good" : "empty",
+      lastUpdated: main.updated_at ? Date.parse(main.updated_at) : Date.now(),
+    };
+  }
+  // Orphan variant rows (no main row yet) still count as work in progress.
+  for (const [ch, list] of variantLists) {
+    if (characters[ch]) continue;
+    const ordered = list
+      .sort((a, b) => (a.variant_number ?? 0) - (b.variant_number ?? 0))
+      .map((v) => (Array.isArray(v.stroke_data) ? v.stroke_data : []))
+      .filter((s) => s.length > 0);
+    if (!ordered.length) continue;
+    characters[ch] = {
+      char: ch,
+      unicode: ch.codePointAt(0) ?? 0,
+      category: guessCategory(ch),
+      strokes: [],
+      variants: ordered,
+      qualityStatus: "empty",
+      lastUpdated: Date.now(),
+    };
+  }
+  const completedCount = Object.values(characters).filter(
+    (c) => c.strokes && c.strokes.length > 0,
+  ).length;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? "",
+    author: "You",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    characters,
+    status: row.status === "generated" ? "generated" : "draft",
+    characterCount: completedCount,
+    completionPercentage: Math.round(
+      (completedCount / ALL_CHARACTERS.length) * 100,
+    ),
+  };
+};
+
+/**
+ * getMyProjects(): the authenticated dashboard source of truth. Returns only
+ * the caller's rows — RLS scopes both queries to auth.uid(); no user_id ever
+ * leaves the UI layer.
+ */
+export const loadMyProjects = async (): Promise<FontProject[]> => {
+  const rows = await listProjects();
+  const out: FontProject[] = [];
+  for (const row of rows) {
+    const glyphs = (await listGlyphs(row.id)) as DbGlyphRow[];
+    out.push(normalizeServerProject(row, glyphs));
+  }
+  return out;
+};
+
+export const updateServerProject = async (
+  id: string,
+  patch: {
+    name?: string;
+    description?: string;
+    status?: string;
+    last_opened_at?: string | null;
+    updated_at?: string;
+  },
+): Promise<void> => {
+  const sb = getSupabase();
+  if (!sb) throw new Error(NOT_CONFIGURED);
+  await sessionUid();
+  const { error } = await sb.from("projects").update(patch).eq("id", id);
+  if (error) throw error;
+};
+
+/** Delete one owned project and its glyphs. Throws on any failure. */
+export const deleteServerProject = async (id: string): Promise<void> => {
+  const sb = getSupabase();
+  if (!sb) throw new Error(NOT_CONFIGURED);
+  await sessionUid();
+  const { error: glyphError } = await sb
+    .from("glyphs")
+    .delete()
+    .eq("project_id", id);
+  if (glyphError) throw glyphError;
+  const { error: projectError } = await sb
+    .from("projects")
+    .delete()
+    .eq("id", id);
+  if (projectError) throw projectError;
+};
+
+/**
+ * Remove stale variant rows at/after a cutoff (e.g. user deleted variants in
+ * the editor). Without this, normalize would resurrect deleted variants.
+ */
+export const deleteGlyphVariantsFrom = async (
+  projectId: string,
+  character: string,
+  fromVariant: number,
+): Promise<void> => {
+  const sb = getSupabase();
+  if (!sb) throw new Error(NOT_CONFIGURED);
+  await sessionUid();
+  const { error } = await sb
+    .from("glyphs")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("character", character)
+    .gte("variant_number", fromVariant);
+  if (error) throw error;
 };

@@ -377,7 +377,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           character={editingChar}
           project={project}
           onSave={async (data: CharacterData) => {
-            onUpdateCharacter(data.char, data.strokes, data.variants, data.strokeStyles, data.variantStyles);
+            return onUpdateCharacter(data.char, data.strokes, data.variants, data.strokeStyles, data.variantStyles);
           }}
           onClose={() => setEditingChar(null)}
           onNext={handleNextChar}

@@ -286,7 +286,7 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
           character={editingChar}
           project={project}
           onSave={async (data: any) => {
-            onUpdateCharacter(data.char, data.strokes, data.variants, data.strokeStyles, data.variantStyles);
+            return onUpdateCharacter(data.char, data.strokes, data.variants, data.strokeStyles, data.variantStyles);
           }}
           onClose={() => setEditingChar(null)}
           onNext={handleNextChar}

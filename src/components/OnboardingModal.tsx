@@ -5,12 +5,15 @@ interface OnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreateProject: (name: string, description: string) => void;
+  /** Shown only when server-side creation failed; input is preserved. */
+  serverError?: string | null;
 }
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   isOpen,
   onClose,
   onCreateProject,
+  serverError,
 }) => {
   const [fontName, setFontName] = useState('My Handwriting');
   const [description, setDescription] = useState('My personal everyday handwriting typeface.');
@@ -81,6 +84,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           </div>
 
           <div className="pt-2">
+            {serverError ? (
+              <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200 mb-3">
+                Couldn&apos;t save to your account — your input is kept. Check
+                your connection and try again.
+              </p>
+            ) : null}
             <button
               type="submit"
               disabled={!fontName.trim()}

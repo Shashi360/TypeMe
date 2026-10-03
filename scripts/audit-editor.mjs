@@ -3,6 +3,114 @@
 // Run: node scripts/audit-editor.mjs
 
 const { chromium } = await import('playwright');
+const { readFileSync: readFileSyncAudit } = await import('fs');
+
+// Live-backend credentials come from the gitignored local .env only — never
+// committed, never logged. Absent .env (or no in-page session) means the app
+// runs in local/guest mode and the audit asserts localStorage as before.
+let SB_URL = '';
+let SB_ANON = '';
+try {
+  const env = readFileSyncAudit(new URL('../.env', import.meta.url), 'utf8');
+  const strip = (v) => v.trim().replace(/^["']|["']$/g, '');
+  SB_URL = strip(/^VITE_SUPABASE_URL=(.+)$/m.exec(env)?.[1] || '');
+  SB_ANON = strip(/^VITE_SUPABASE_ANON_KEY=(.+)$/m.exec(env)?.[1] || '');
+} catch {
+  /* local-only audit */
+}
+
+// Resolve the app's effective data source inside the page: a live Supabase
+// session (token + migrated server id for the seeded local 'p1') or null
+// when the app is in local/guest mode.
+const serverBinding = (page) =>
+  page.evaluate(() => {
+    let token = null;
+    let uid = null;
+    let serverId = null;
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k.startsWith('sb-') && k.endsWith('-auth-token')) {
+        try {
+          token = JSON.parse(localStorage.getItem(k))?.access_token || null;
+          if (token) uid = JSON.parse(atob(token.split('.')[1])).sub;
+        } catch { /* ignore */ }
+      }
+      if (k.startsWith('typeme_server_ids_')) {
+        try {
+          serverId = JSON.parse(localStorage.getItem(k) || '{}').p1 || null;
+          if (serverId) uid = uid || k.replace('typeme_server_ids_', '');
+        } catch { /* ignore */ }
+      }
+    }
+    return token && serverId ? { token, uid, serverId } : null;
+  });
+
+const restGlyphStrokes = async (binding, character) => {
+  const url =
+    `${SB_URL}/rest/v1/glyphs?project_id=eq.${binding.serverId}` +
+    `&character=eq.${encodeURIComponent(character)}&variant_number=eq.0&select=stroke_data`;
+  const res = await fetch(url, {
+    headers: { apikey: SB_ANON, Authorization: `Bearer ${binding.token}` },
+  });
+  if (!res.ok) return -1;
+  const rows = await res.json();
+  const strokes = rows?.[0]?.stroke_data;
+  return Array.isArray(strokes) ? strokes.length : -1;
+};
+
+const restFilledChars = async (binding) => {
+  const url =
+    `${SB_URL}/rest/v1/glyphs?project_id=eq.${binding.serverId}` +
+    `&variant_number=eq.0&select=character,stroke_data`;
+  const res = await fetch(url, {
+    headers: { apikey: SB_ANON, Authorization: `Bearer ${binding.token}` },
+  });
+  if (!res.ok) return [];
+  const rows = await res.json();
+  return (Array.isArray(rows) ? rows : [])
+    .filter((r) => Array.isArray(r.stroke_data) && r.stroke_data.length > 0)
+    .map((r) => r.character);
+};
+
+// Source-aware stroke read: live Supabase rows when the app established a
+// session, otherwise the local guest cache. Returns -1 when unreadable.
+const readCharStrokes = async (page, binding, character) => {
+  if (binding && SB_URL && SB_ANON) {
+    const n = await restGlyphStrokes(binding, character).catch(() => -1);
+    if (n >= 0) return n;
+  }
+  return page.evaluate((ch) => {
+    const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
+    return raw[0]?.characters?.[ch]?.strokes?.length ?? -1;
+  }, character);
+};
+
+// Server saves are network round-trips (several sequential upserts), so the
+// audit polls instead of single-reading: resolves with the first value that
+// satisfies `expect`, or the last value seen when the budget runs out.
+const pollCharStrokes = async (page, binding, character, expect, budgetMs = 9000) => {
+  const start = Date.now();
+  let last = -1;
+  for (;;) {
+    last = await readCharStrokes(page, binding, character);
+    if (expect(last)) return last;
+    if (Date.now() - start > budgetMs) return last;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+};
+
+// Remove this run's QA rows (self-delete under its own uid) so repeated
+// audits leave zero footprint. Keeper/user rows are never touched: only the
+// server id mapped from the seeded local 'p1' is deleted.
+const cleanupBinding = async (binding) => {
+  if (!binding || !SB_URL || !SB_ANON) return;
+  const headers = { apikey: SB_ANON, Authorization: `Bearer ${binding.token}` };
+  try {
+    await fetch(`${SB_URL}/rest/v1/glyphs?project_id=eq.${binding.serverId}`, { method: 'DELETE', headers });
+    await fetch(`${SB_URL}/rest/v1/projects?id=eq.${binding.serverId}`, { method: 'DELETE', headers });
+  } catch { /* best effort */ }
+};
 
 const VIEWPORTS = [
   [1440, 900, 'desktop'],
@@ -182,11 +290,9 @@ for (const [w, h, label] of VIEWPORTS) {
   check(`${label}: ink renders on canvas`, after > before + 200, `${before} -> ${after} dark px`);
 
   await page.waitForTimeout(1200);
-  const strokes = await page.evaluate(() => {
-    const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
-    return raw[0]?.characters?.A?.strokes?.length ?? -1;
-  });
-  check(`${label}: strokes recorded`, strokes === 5, `${strokes} saved strokes`);
+  const binding = await serverBinding(page);
+  const strokes = await pollCharStrokes(page, binding, 'A', (n) => n === 5);
+  check(`${label}: strokes recorded`, strokes === 5, `${strokes} saved strokes${binding ? ' (server)' : ' (local)'}`);
 
   // Strokes must survive a pointer release and a re-render (no reset).
   await page.mouse.move(5, 5);
@@ -250,15 +356,30 @@ for (const [w, h, label] of VIEWPORTS) {
   // Save & Next must persist and advance to an unwritten character.
   await page.locator('button', { hasText: /Save & Next/ }).first().click();
   await page.waitForTimeout(900);
-  const afterNext = await page.evaluate(() => {
-    const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
-    const p = raw[0];
-    return {
-      filled: Object.values(p.characters || {}).filter((c) => c.strokes?.length).map((c) => c.char),
-      current: document.querySelector('[data-testid="editor-current-char"]')?.textContent?.trim() || '',
-      bStrokes: p.characters?.B?.strokes?.length ?? -1,
-    };
-  });
+  // Server saves land a few round-trips later; poll until A is visible.
+  if (binding) {
+    const start = Date.now();
+    for (;;) {
+      const f = await restFilledChars(binding).catch(() => []);
+      if (f.includes('A') || Date.now() - start > 9000) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+  const afterNext = binding
+    ? {
+        filled: await restFilledChars(binding).catch(() => []),
+        current: (await page.locator('[data-testid="editor-current-char"]').first().textContent().catch(() => '') || '').trim(),
+        bStrokes: await readCharStrokes(page, binding, 'B'),
+      }
+    : await page.evaluate(() => {
+        const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
+        const p = raw[0];
+        return {
+          filled: Object.values(p.characters || {}).filter((c) => c.strokes?.length).map((c) => c.char),
+          current: document.querySelector('[data-testid="editor-current-char"]')?.textContent?.trim() || '',
+          bStrokes: p.characters?.B?.strokes?.length ?? -1,
+        };
+      });
   check(`${label}: save persisted strokes`, afterNext.filled.includes('A'), `filled=[${afterNext.filled.join(',')}]`);
   check(`${label}: Save & Next advanced to next unwritten`, afterNext.current === 'B', `now "${afterNext.current}"`);
   check(`${label}: next character starts empty`, afterNext.bStrokes === 0, `${afterNext.bStrokes} strokes`);
@@ -278,11 +399,8 @@ for (const [w, h, label] of VIEWPORTS) {
   check(`${label}: stylus input draws`, penAfter > penBefore + 100, `${penBefore} -> ${penAfter}`);
 
   await page.waitForTimeout(1200);
-  const finalStrokes = await page.evaluate(() => {
-    const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
-    return raw[0]?.characters?.B?.strokes?.length ?? -1;
-  });
-  check(`${label}: touch + stylus strokes counted`, finalStrokes === 2, `${finalStrokes} saved strokes`);
+  const finalStrokes = await pollCharStrokes(page, binding, 'B', (n) => n === 2);
+  check(`${label}: touch + stylus strokes counted`, finalStrokes === 2, `${finalStrokes} saved strokes${binding ? ' (server)' : ' (local)'}`);
 
   // Eraser must actually remove ink.
   const toolsTab = page.locator('aside button', { hasText: /^Tools$/ });
@@ -338,12 +456,9 @@ for (const [w, h, label] of VIEWPORTS) {
   // Clear empties the canvas and persists the empty state (autosave debounce).
   await page.getByRole('button', { name: 'Clear' }).click();
   await page.waitForTimeout(1500);
-  const cleared = await page.evaluate(() => {
-    const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
-    return raw[0]?.characters?.B?.strokes?.length ?? -1;
-  });
+  const cleared = await pollCharStrokes(page, binding, 'B', (n) => n === 0);
   const clearedInk = await inkCount(page);
-  check(`${label}: clear resets canvas`, cleared === 0, `${cleared} saved strokes`);
+  check(`${label}: clear resets canvas`, cleared === 0, `${cleared} saved strokes${binding ? ' (server)' : ' (local)'}`);
   check(`${label}: cleared canvas has no ink`, clearedInk === 0, `${clearedInk} dark px`);
 
   // The controls disclosure must toggle (mobile-first collapse).
@@ -409,6 +524,9 @@ for (const [w, h, label] of VIEWPORTS) {
   await page.waitForTimeout(250);
 
   check(`${label}: no console errors`, errors.length === 0, errors.slice(0, 2).join(' | '));
+  // Server-mode runs leave QA rows under a throwaway anon uid — remove them
+  // (self-delete). Local-mode runs have nothing to clean.
+  await cleanupBinding(binding).catch(() => {});
   await page.close();
 }
 

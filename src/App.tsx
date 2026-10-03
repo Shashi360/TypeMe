@@ -23,7 +23,16 @@ import { LearnView } from './components/LearnView';
 import { StyleExplorerView } from './components/StyleExplorerView';
 import LegalView from './components/LegalView';
 import { unregisterFontUrl } from './utils/fontGenerator';
-import { migrateLocalProjectsToSupabase } from './utils/db';
+import {
+  migrateLocalProjectsToSupabase,
+  loadMyProjects,
+  createProject as createServerProject,
+  updateServerProject,
+  deleteServerProject,
+  upsertGlyph as upsertServerGlyph,
+  deleteGlyphVariantsFrom as deleteServerVariantsFrom,
+} from './utils/db';
+import { ensureSupabaseSession } from './utils/supabaseSession';
 
 export default function App() {
   // User state
@@ -63,6 +72,106 @@ export default function App() {
     }
     return projects[0]?.id || '';
   });
+
+  // ---- Supabase-backed mode ---------------------------------------------
+  // serverUid !== null means a real Supabase session exists and Supabase is
+  // the authoritative project source. null = guest/local mode (localStorage).
+  // While serverLoading, the local cache stays on screen; it is replaced by
+  // the verified server response, never merged.
+  const [serverUid, setServerUid] = useState<string | null>(null);
+  const [serverLoading, setServerLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const serverRun = useRef(0);
+  // Ref mirrors for async save paths: event/callback closures captured
+  // before establishment finished must still observe the live mode and the
+  // live active project (never a stale render's values).
+  const serverUidRef = useRef<string | null>(null);
+  const setServerUidSync = (v: string | null) => {
+    serverUidRef.current = v;
+    setServerUid(v);
+  };
+  const activeIdRef = useRef(activeProjectId);
+  useEffect(() => {
+    activeIdRef.current = activeProjectId;
+  }, [activeProjectId]);
+  // True while the mode decision is in flight (mirrors serverLoading state
+  // for stale closures).
+  const establishingRef = useRef(false);
+  // Resolves when the in-flight establish finishes; lets mutations that land
+  // inside the establishing window wait for the mode decision instead of
+  // guessing local vs server.
+  const serverSettled = useRef<Promise<void> | null>(null);
+  const settleServer = () => serverSettled.current?.catch(() => {});
+  // Bumped on every server-confirmed mutation. The initial server snapshot
+  // must never clobber newer state (e.g. project created while the first
+  // load was still in flight) — in that case we refetch and apply fresh.
+  const serverMut = useRef(0);
+
+  const enterServerMode = async (baseLocal: FontProject[]) => {
+    const run = ++serverRun.current;
+    setServerLoading(true);
+    establishingRef.current = true;
+    let resolveSettled: () => void = () => {};
+    serverSettled.current = new Promise<void>((res) => {
+      resolveSettled = res;
+    });
+    try {
+      const uid = await ensureSupabaseSession();
+      if (run !== serverRun.current) return;
+      setServerUidSync(uid);
+      // Re-read the local cache: projects created while the session was
+      // being established are in localStorage but not in the login-time
+      // snapshot. Union by id so nothing created mid-flight is skipped.
+      let base = baseLocal;
+      try {
+        const stored = JSON.parse(
+          localStorage.getItem('typeme_projects') || '[]'
+        ) as FontProject[];
+        if (Array.isArray(stored) && stored.length) {
+          const seen = new Set(base.map((p) => p?.id));
+          const extra = stored.filter((p) => p && !seen.has(p.id));
+          if (extra.length) base = [...base, ...extra];
+        }
+      } catch {
+        // ignore — fall back to the login-time snapshot
+      }
+      const v0 = serverMut.current;
+      await migrateLocalProjectsToSupabase(baseLocal).catch(() => {});
+      if (run !== serverRun.current) return;
+      let server = await loadMyProjects();
+      if (run !== serverRun.current) return;
+      if (serverMut.current !== v0) {
+        // A server-confirmed mutation landed mid-load; refetch so the
+        // snapshot applied below includes it instead of erasing it.
+        server = await loadMyProjects();
+        if (run !== serverRun.current) return;
+      }
+      setProjects(server);
+      setActiveProjectId((prev) =>
+        server.some((p) => p.id === prev) ? prev : server[0]?.id || ''
+      );
+    } catch {
+      // No session / unreachable: stay in local mode, keep local data.
+      if (run !== serverRun.current) return;
+      setServerUidSync(null);
+    } finally {
+      if (run === serverRun.current) {
+        setServerLoading(false);
+        establishingRef.current = false;
+      }
+      resolveSettled();
+    }
+  };
+
+  // Refresh with a restored login re-establishes the server session so the
+  // dashboard and editor read the same Supabase rows (no manual restart).
+  const serverRestored = useRef(false);
+  useEffect(() => {
+    if (!user || serverRestored.current) return;
+    serverRestored.current = true;
+    void enterServerMode(projects);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // Navigation state (restored after refresh so reloads stay on the same page)
   const [currentView, setCurrentView] = useState<AppView>(() => {
@@ -150,8 +259,7 @@ export default function App() {
 
   // Modals state
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
-  const [generationModalOpen, setGenerationModalOpen] = useState(false);
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);  const [generationModalOpen, setGenerationModalOpen] = useState(false);
   const [quizModalOpen, setQuizModalOpen] = useState(false);
 
   // Legal document state
@@ -177,12 +285,15 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
+    // Server mode: Supabase is authoritative; never overwrite the local
+    // guest cache with server rows (it stays intact for offline/guest use).
+    if (serverUid) return;
     try {
       localStorage.setItem('typeme_projects', JSON.stringify(projects));
     } catch {
       // ignore
     }
-  }, [projects]);
+  }, [projects, serverUid]);
 
   // Active project helper
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0];
@@ -190,9 +301,11 @@ export default function App() {
   // Auth handler
   const handleAuthSuccess = (authenticatedUser: User, isNewUser: boolean) => {
     setUser(authenticatedUser);
-    // One-time local → Supabase claim in the background. Never blocks login,
-    // never deletes local data, no-ops entirely while Supabase has no session.
-    migrateLocalProjectsToSupabase(projects).catch(() => {});
+    // Server becomes authoritative: migrate local work into this account,
+    // then replace the dashboard source with the verified server response.
+    // Runs in the background; local cache stays visible meanwhile.
+    serverRestored.current = true;
+    void enterServerMode(projects).catch(() => {});
     if (isNewUser) {
       setOnboardingModalOpen(true);
     } else {
@@ -201,16 +314,65 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    // Drop server state first so nothing from this account can leak into
+    // the next session; local guest cache is restored untouched.
+    serverRun.current += 1;
+    setServerUidSync(null);
+    setServerLoading(false);
+    establishingRef.current = false;
+    try {
+      const saved = localStorage.getItem('typeme_projects');
+      if (saved) {
+        const local = JSON.parse(saved) as FontProject[];
+        setProjects(local);
+        setActiveProjectId(local[0]?.id || '');
+      }
+    } catch {
+      // ignore — keep in-memory state
+    }
     setUser(null);
     setCurrentView('landing');
   };
 
   // Project management handlers
   const handleStartNewFont = () => {
+    setCreateError(null);
     setOnboardingModalOpen(true);
   };
 
-  const handleCreateProject = (name: string, description: string) => {
+  const handleCreateProject = async (name: string, description: string) => {
+    // A create landing inside the establishing window waits for the mode
+    // decision so it never writes to the wrong source of truth.
+    if (establishingRef.current) await settleServer();
+    if (serverUidRef.current) {
+      // Authenticated: the project exists only after Supabase confirms it.
+      // On failure the onboarding modal stays open with the input preserved.
+      try {
+        const row = await createServerProject(name, description);
+        const serverProj: FontProject = {
+          id: row.id,
+          name: row.name,
+          description: row.description ?? description,
+          author: user?.name || 'You',
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          characters: {},
+          status: 'draft',
+          characterCount: 0,
+          completionPercentage: 0,
+        };
+        setCreateError(null);
+        serverMut.current += 1;
+        setProjects((prev) => [serverProj, ...prev]);
+        setActiveProjectId(serverProj.id);
+        setOnboardingModalOpen(false);
+        setCurrentView('workspace');
+      } catch (err) {
+        console.error('Supabase project creation failed:', err);
+        setCreateError('supabase-create-failed');
+      }
+      return;
+    }
     const authorName = user?.name || 'You';
     const newProj = createNewProject(name, description, authorName);
     setProjects((prev) => [newProj, ...prev]);
@@ -222,11 +384,62 @@ export default function App() {
   const handleOpenProject = (projectId: string) => {
     setActiveProjectId(projectId);
     setCurrentView('workspace');
+    // Best-effort recency marker; never blocks opening.
+    if (serverUidRef.current) {
+      updateServerProject(projectId, {
+        last_opened_at: new Date().toISOString(),
+      }).catch(() => {});
+    }
   };
 
-  const handleDuplicateProject = (projectId: string) => {
+  const handleDuplicateProject = async (projectId: string) => {
     const orig = projects.find((p) => p.id === projectId);
     if (!orig) return;
+    if (serverUidRef.current) {
+      // Authenticated: the copy exists only after Supabase confirms it.
+      try {
+        const row = await createServerProject(
+          `${orig.name} (Copy)`,
+          orig.description
+        );
+        for (const [ch, cd] of Object.entries(orig.characters ?? {})) {
+          if (!cd.strokes?.length) continue;
+          await upsertServerGlyph(row.id, {
+            character: ch,
+            variant_number: 0,
+            strokes: cd.strokes,
+            status: 'good',
+            is_saved: true,
+          });
+          const vs = cd.variants ?? [];
+          for (let i = 0; i < vs.length; i++) {
+            if (!vs[i]?.length) continue;
+            await upsertServerGlyph(row.id, {
+              character: ch,
+              variant_number: i + 1,
+              strokes: vs[i],
+              status: 'good',
+              is_saved: true,
+            });
+          }
+        }
+        const copy: FontProject = {
+          ...JSON.parse(JSON.stringify(orig)),
+          id: row.id,
+          name: row.name,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          status: 'draft',
+          ttfBlobUrl: undefined,
+          otfBlobUrl: undefined,
+        };
+        serverMut.current += 1;
+        setProjects((prev) => [copy, ...prev]);
+      } catch (err) {
+        console.error('Supabase project duplication failed:', err);
+      }
+      return;
+    }
 
     const copy: FontProject = {
       ...JSON.parse(JSON.stringify(orig)),
@@ -247,8 +460,18 @@ export default function App() {
   };
 
   const handleUpdateProjectName = (projectId: string, newName: string) => {
+    const prevName = projects.find((p) => p.id === projectId)?.name;
     const updated = projects.map((p) => (p.id === projectId ? { ...p, name: newName } : p));
     setProjects(updated);
+    if (serverUidRef.current) {
+      // Revert on server failure so the UI never shows an unpersisted name.
+      updateServerProject(projectId, { name: newName }).catch(() => {
+        setProjects((prev) =>
+          prev.map((p) => (p.id === projectId ? { ...p, name: prevName ?? p.name } : p))
+        );
+      });
+      return;
+    }
     try {
       localStorage.setItem('typeme_projects', JSON.stringify(updated));
     } catch {}
@@ -256,10 +479,20 @@ export default function App() {
 
   const [deleteBlocked, setDeleteBlocked] = useState(false);
 
-  const handleDeleteProject = (projectId: string) => {
+  const handleDeleteProject = async (projectId: string) => {
     if (projects.length <= 1) {
       setDeleteBlocked(true);
       return;
+    }
+    if (serverUidRef.current) {
+      // Delete server-side first; the row stays visible if that fails.
+      try {
+        await deleteServerProject(projectId);
+      } catch (err) {
+        console.error('Supabase project deletion failed:', err);
+        return;
+      }
+      serverMut.current += 1;
     }
     const updated = projects.filter((p) => p.id !== projectId);
     setProjects(updated);
@@ -268,13 +501,48 @@ export default function App() {
     }
   };
 
-  const handleUpdateCharacter = (
+  const handleUpdateCharacter = async (
     char: string,
     strokes: Stroke[],
     variants?: Stroke[][],
     strokeStyles?: { brush: string; size: string }[],
     variantStyles?: { brush: string; size: string }[][],
   ) => {
+    // Like create: never persist against a mode that is still being decided.
+    // serverLoading/activeProjectId come from refs: this callback may be a
+    // stale closure captured before establishment finished.
+    if (establishingRef.current) await settleServer();
+    const liveUid = serverUidRef.current;
+    const targetId = activeIdRef.current;
+    if (liveUid) {
+      // Authenticated: persist to Supabase BEFORE touching UI state, so the
+      // editor's saved indicator (and its retry pill on throw) reflects the
+      // real persistence result. Strokes are never shown as saved early.
+      await upsertServerGlyph(targetId, {
+        character: char,
+        variant_number: 0,
+        strokes,
+        status: strokes.length > 0 ? 'good' : 'empty',
+        is_saved: true,
+      });
+      const vs = variants ?? [];
+      for (let i = 0; i < vs.length; i++) {
+        if (!vs[i]?.length) continue;
+        await upsertServerGlyph(targetId, {
+          character: char,
+          variant_number: i + 1,
+          strokes: vs[i],
+          status: 'good',
+          is_saved: true,
+        });
+      }
+      // Drop server variant rows the user deleted locally.
+      await deleteServerVariantsFrom(targetId, char, vs.length + 1);
+      await updateServerProject(targetId, {
+        updated_at: new Date().toISOString(),
+      });
+      serverMut.current += 1;
+    }
     setProjects((prev) =>
       prev.map((proj) => {
         if (proj.id !== activeProjectId) return proj;
@@ -633,8 +901,12 @@ export default function App() {
       {/* Onboarding Modal ("What should we call your font?") */}
       <OnboardingModal
         isOpen={onboardingModalOpen}
-        onClose={() => setOnboardingModalOpen(false)}
+        onClose={() => {
+          setCreateError(null);
+          setOnboardingModalOpen(false);
+        }}
         onCreateProject={handleCreateProject}
+        serverError={createError}
       />
 
       {/* Style Quiz Modal ("Which Font Are You?") */}
