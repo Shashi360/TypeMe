@@ -73,7 +73,7 @@ export const FooterAboutMe: React.FC<FooterAboutMeProps> = ({
             </p>
             <p className="text-sm leading-relaxed text-neutral-500 text-pretty">
               So I built the tool I wished existed: trace each letter by hand, then export a real
-              OpenType and TrueType font you can type with, license, and keep.
+              OpenType font you can type with, license, and keep.
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <button

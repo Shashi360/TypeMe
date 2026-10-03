@@ -141,13 +141,36 @@ export async function compileLivePreviewFont(
   }
 }
 
+/**
+ * Registry of object URLs created this session. Blob URLs die on reload
+ * while their strings can persist in storage — this set is the only honest
+ * liveness check (fetch() does not work on blob: URLs in Chromium).
+ */
+const liveFontUrls = new Set<string>();
+
+export const registerFontUrl = (url: string): void => {
+  liveFontUrls.add(url);
+};
+
+export const unregisterFontUrl = (url: string): void => {
+  liveFontUrls.delete(url);
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    // ignore
+  }
+};
+
+export const isFontUrlLive = (url: string | undefined): boolean =>
+  !!url && liveFontUrls.has(url);
+
 export async function generateFontFromCharacters(
   familyName: string,
   characters: Record<string, CharacterData>,
   onProgress?: (progress: GenerationProgress) => void
 ): Promise<{
-  ttfBlob: Blob;
-  ttfUrl: string;
+  otfBlob: Blob;
+  otfUrl: string;
   registeredFontFamily: string;
   fileSizeBytes: number;
 }> {
@@ -181,11 +204,10 @@ export async function generateFontFromCharacters(
   });
 
   // Step 5: Generating font files
-  // NOTE: opentype.js emits a TrueType-flavored (glyf-outline) binary, so the
-  // honest output is .ttf only. A previous build relabeled the same bytes as
-  // ".otf" — that was a mislabeled TTF, not OpenType/CFF, so OTF output was
-  // removed rather than shipping a fake format.
-  onProgress?.({ step: 5, totalSteps: 6, message: 'Generating font binary (.ttf)...' });
+  // NOTE (verified by parsing output tables: os2/cmap/head/hhea/maxp/post/
+  // name/cff, no glyf/loca): opentype.js emits a CFF-flavored OpenType
+  // binary, so the single honest artifact is .otf — never a relabeled .ttf.
+  onProgress?.({ step: 5, totalSteps: 6, message: 'Generating font binary (.otf)...' });
   await new Promise((r) => setTimeout(r, 220));
 
   const arrayBuffer = font.toArrayBuffer();
@@ -195,8 +217,9 @@ export async function generateFontFromCharacters(
   onProgress?.({ step: 6, totalSteps: 6, message: 'Activating live specimen font...' });
   await new Promise((r) => setTimeout(r, 180));
 
-  const ttfBlob = new Blob([arrayBuffer], { type: 'font/ttf' });
-  const ttfUrl = URL.createObjectURL(ttfBlob);
+  const otfBlob = new Blob([arrayBuffer], { type: 'font/otf' });
+  const otfUrl = URL.createObjectURL(otfBlob);
+  registerFontUrl(otfUrl);
 
   const registeredFontFamily = `TypeMe_${cleanFamilyName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
   try {
@@ -208,8 +231,8 @@ export async function generateFontFromCharacters(
   }
 
   return {
-    ttfBlob,
-    ttfUrl,
+    otfBlob,
+    otfUrl,
     registeredFontFamily,
     fileSizeBytes,
   };

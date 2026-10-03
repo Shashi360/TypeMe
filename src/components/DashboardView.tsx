@@ -11,7 +11,10 @@ import {
   CheckCircle,
   FileText,
   ArrowRight,
+  Crown,
 } from 'lucide-react';
+import { getSubscriptionSummary, formatPlanDate } from '../utils/subscription';
+import { TypeMeDropdown } from './TypeMeDropdown';
 
 interface DashboardViewProps {
   user: User;
@@ -23,6 +26,7 @@ interface DashboardViewProps {
   onPreviewProject: (projectId: string) => void;
   onDownloadProject: (projectId: string) => void;
   onUpdateProjectName: (projectId: string, newName: string) => void;
+  onOpenPricing?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -35,7 +39,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onPreviewProject,
   onDownloadProject,
   onUpdateProjectName,
+  onOpenPricing,
 }) => {
+  const subscription = getSubscriptionSummary(user);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'recent' | 'completion' | 'name'>('recent');
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
@@ -125,6 +131,51 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* 2b. Subscription summary (compact; dates derived from stored record) */}
+      <div className="p-5 rounded-2xl bg-white border border-neutral-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${subscription.state === 'free' ? 'bg-neutral-100' : 'bg-amber-100'}`}>
+            <Crown className={`h-5 w-5 ${subscription.state === 'free' ? 'text-neutral-400' : 'text-amber-700'}`} fill="currentColor" />
+          </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-neutral-900 font-serif">
+                {subscription.state === 'free' ? 'FREE' : 'PRO'}
+              </span>
+              <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                subscription.state === 'active' ? 'text-emerald-700'
+                : subscription.state === 'expiring' ? 'text-amber-700'
+                : subscription.state === 'expired' ? 'text-rose-600'
+                : 'text-neutral-400'
+              }`}>
+                {subscription.state === 'free' ? 'current plan'
+                  : subscription.state === 'active' ? 'active'
+                  : subscription.state === 'expiring' ? 'expiring soon'
+                  : 'expired'}
+              </span>
+            </div>
+            <p className="text-xs text-neutral-500 mt-0.5">
+              {subscription.state === 'free'
+                ? 'Create your first font and upgrade when you need more.'
+                : `${subscription.daysRemaining} days left · Recharged ${formatPlanDate(subscription.startedAt)} · Expires ${formatPlanDate(subscription.expiresAt)}`}
+            </p>
+          </div>
+        </div>
+        {onOpenPricing ? (
+          <button
+            type="button"
+            onClick={onOpenPricing}
+            className={`px-4 py-2 text-xs font-semibold rounded-xl transition-colors shadow-sm cursor-pointer shrink-0 ${
+              subscription.state === 'free'
+                ? 'text-white bg-neutral-900 hover:bg-neutral-800'
+                : 'text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200'
+            }`}
+          >
+            {subscription.state === 'free' ? 'Upgrade to Pro' : 'View Plan'}
+          </button>
+        ) : null}
+      </div>
+
       {/* 3. Main Section: Your Fonts (Prompt Section 21) */}
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -147,15 +198,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               />
             </div>
 
-            <select
+            <TypeMeDropdown
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="py-1.5 px-3 text-xs rounded-xl border border-neutral-200 bg-white text-neutral-700 focus:outline-none"
-            >
-              <option value="recent">Recently Created</option>
-              <option value="completion">Completion %</option>
-              <option value="name">Alphabetical</option>
-            </select>
+              ariaLabel="Sort fonts"
+              onChange={(v) => setSortBy(v)}
+              options={[
+                { value: 'recent', label: 'Recent', hint: 'Recently created first' },
+                { value: 'completion', label: 'Progress', hint: 'Highest completion first' },
+                { value: 'name', label: 'A–Z', hint: 'Alphabetical by name' },
+              ]}
+            />
           </div>
         </div>
 

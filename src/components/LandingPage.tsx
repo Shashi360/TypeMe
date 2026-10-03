@@ -801,7 +801,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
 
           <p className="text-xs sm:text-sm text-neutral-500 max-w-sm mx-auto pt-2">
-            One installable TrueType file works seamlessly across all your creative tools.
+            One installable OpenType file works seamlessly across all your creative tools.
           </p>
         </div>
       </section>
@@ -855,7 +855,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <span className="text-xs font-mono font-bold text-neutral-400">STEP 4</span>
               <h3 className="text-xl font-bold text-neutral-900 font-serif">Download</h3>
               <p className="text-xs text-neutral-600 leading-relaxed">
-                Download your .TTF font file and select it directly in Word, Photoshop, or GoodNotes.
+                Download your .OTF font file and select it directly in Word, Photoshop, or GoodNotes.
               </p>
               <div className="text-xs font-mono text-neutral-900 pt-2 flex items-center gap-1">
                 <Download className="w-3.5 h-3.5" /> Ready to install

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { getEntitlements, upgradeForDownload, type UpgradeCopy } from '../utils/entitlements';
 import { UpgradeModal } from './UpgradeModal';
+import { isFontUrlLive } from '../utils/fontGenerator';
 
 interface DownloadViewProps {
   project: FontProject;
@@ -48,27 +49,41 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
   const ent = useMemo(() => getEntitlements(tier), [tier]);
   const [upgrade, setUpgrade] = useState<UpgradeCopy | null>(null);
 
+  const [downloadError, setDownloadError] = useState(false);
+
+  const urlLive = isFontUrlLive(project.otfBlobUrl);
+
   const handleDownload = () => {
+    setDownloadError(false);
     if (!ent.canDownloadFont()) {
       setUpgrade(upgradeForDownload);
       return;
     }
-    const url = project.ttfBlobUrl;
-    if (!url) return;
+    const url = project.otfBlobUrl;
+    // Blob URLs die on reload while their strings persist in storage — a
+    // non-live URL shows a real error instead of failing silently.
+    if (!url || !isFontUrlLive(url)) {
+      setDownloadError(true);
+      return;
+    }
 
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${cleanFileName}.ttf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${cleanFileName}.otf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
 
-    onIncrementDownload();
+      onIncrementDownload();
+    } catch {
+      setDownloadError(true);
+    }
   };
 
   const cssSnippet = `@font-face {
   font-family: '${project.name}';
-  src: url('${cleanFileName}.ttf') format('truetype');
+  src: url('${cleanFileName}.otf') format('opentype');
   font-weight: normal;
   font-style: normal;
 }`;
@@ -123,28 +138,35 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
         <h2 className="text-lg font-bold text-neutral-900 font-serif">Download</h2>
 
         <div className="grid grid-cols-1 gap-4">
-          {/* TTF Card — the only format the generator honestly produces */}
+          {/* OTF Card — the only format the generator honestly produces
+              (CFF-flavored OpenType, verified from output tables) */}
           <div className="p-6 rounded-2xl bg-white border border-neutral-200 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-neutral-900 text-white">
-                  TTF
+                  OTF
                 </span>
                 <span className="text-xs text-neutral-400 font-mono tabular-nums">{sizeKb} KB</span>
               </div>
-              <h3 className="text-base font-bold text-neutral-900 font-serif">TrueType Font</h3>
+              <h3 className="text-base font-bold text-neutral-900 font-serif">OpenType Font</h3>
               <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
-                Most widely supported format. Compatible with macOS, Windows, iPad, iPhone, Word, Photoshop, and Procreate.
+                Vector outlines compiled from your strokes. Compatible with macOS, Windows, iPad, iPhone, Word, Photoshop, and Procreate.
               </p>
             </div>
 
+            {downloadError || (project.otfBlobUrl && !urlLive) ? (
+              <p className="mt-4 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2.5 text-center font-medium">
+                Your font file couldn't be downloaded. Please try generating it again.
+              </p>
+            ) : null}
+
             <button
               onClick={() => handleDownload()}
-              disabled={!project.ttfBlobUrl}
+              disabled={!project.otfBlobUrl || !urlLive}
               className="mt-6 w-full py-2.5 px-4 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-40 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
               {ent.canDownloadFont() ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-              <span>Download TrueType (.ttf)</span>
+              <span>Download OpenType (.otf)</span>
               {!ent.canDownloadFont() ? (
                 <span className="text-[10px] font-bold uppercase tracking-wider bg-white/15 px-1.5 py-0.5 rounded">Pro</span>
               ) : null}
@@ -220,14 +242,14 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
           <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
             <span className="font-semibold text-neutral-900 block mb-1">macOS</span>
             <p className="leading-relaxed">
-              Double-click the downloaded <code>.ttf</code> file. Click "Install Font" in the Font Book app. Select in Pages, Keynote, Word, or Figma.
+              Double-click the downloaded <code>.otf</code> file. Click "Install Font" in the Font Book app. Select in Pages, Keynote, Word, or Figma.
             </p>
           </div>
 
           <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
             <span className="font-semibold text-neutral-900 block mb-1">Windows</span>
             <p className="leading-relaxed">
-              Right-click the <code>.ttf</code> file and choose "Install" (or "Install for all users"). Re-open Microsoft Word, Photoshop, or PowerPoint.
+              Right-click the <code>.otf</code> file and choose "Install" (or "Install for all users"). Re-open Microsoft Word, Photoshop, or PowerPoint.
             </p>
           </div>
 

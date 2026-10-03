@@ -78,14 +78,14 @@ const PRO_GENERAL = [
   "Full character set",
   "All brushes & stroke sizes",
   "Full font generation",
-  "TTF download",
+  "OTF download",
 ];
 
 export const upgradeForBrush = (brush: string): UpgradeCopy => ({
   feature: `${brush.charAt(0).toUpperCase() + brush.slice(1)} brush`,
   description:
     "Create elegant variable-width handwriting strokes with Pro.",
-  bullets: ["All 4 brush styles", "More natural handwriting", "Advanced font creation", ...PRO_GENERAL.slice(2)],
+  bullets: ["All 4 brush styles", "More natural handwriting", "Advanced font creation", "OTF download"],
 });
 
 export const upgradeForStrokeSize = (size: string): UpgradeCopy => ({
@@ -106,19 +106,19 @@ export const upgradeForVariants: UpgradeCopy = {
   feature: "Alternate variants",
   description:
     "Pro lets you create up to 4 styles per character (Main + 3 alternates). Upgrade to TypeMe Pro to unlock variants.",
-  bullets: ["Up to 4 styles per character", "Richer, more natural fonts", "Advanced font creation", "TTF download"],
+  bullets: ["Up to 4 styles per character", "Richer, more natural fonts", "Advanced font creation", "OTF download"],
 };
 
 export const upgradeForCharacters: UpgradeCopy = {
   feature: "Full character set",
   description:
     "Free includes 20 starter characters (A–T). Upgrade to TypeMe Pro to unlock all 82+ glyphs — lowercase, numbers and symbols.",
-  bullets: ["All 82+ glyphs", "Lowercase, numbers & symbols", "More variants", "Full font generation", "TTF download"],
+  bullets: ["All 82+ glyphs", "Lowercase, numbers & symbols", "More variants", "Full font generation", "OTF download"],
 };
 
 export const upgradeForDownload: UpgradeCopy = {
   feature: "Font downloads",
   description:
-    "Your font is ready. Upgrade to TypeMe Pro (₹99/month) to download your TTF font file.",
-  bullets: ["TTF font download", "Install on any device", "Complete font generation", "Advanced processing"],
+    "Your font is ready. Upgrade to TypeMe Pro (₹99/month) to download your OTF font file.",
+  bullets: ["OTF font download", "Install on any device", "Complete font generation", "Advanced processing"],
 };

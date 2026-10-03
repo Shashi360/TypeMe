@@ -44,7 +44,7 @@ const FAQS = [
   },
   {
     q: "How does my handwriting become a font?",
-    a: "Write your letters, and TypeMe turns your strokes into real vector glyphs, then compiles them into a real TTF font file.",
+    a: "Write your letters, and TypeMe turns your strokes into real vector glyphs, then compiles them into a real OTF font file.",
   },
   {
     q: "Will I lose my work if I refresh?",

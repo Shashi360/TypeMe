@@ -22,6 +22,7 @@ import { StyleQuizModal } from './components/StyleQuizModal';
 import { LearnView } from './components/LearnView';
 import { StyleExplorerView } from './components/StyleExplorerView';
 import LegalView from './components/LegalView';
+import { unregisterFontUrl } from './utils/fontGenerator';
 
 export default function App() {
   // User state
@@ -312,13 +313,14 @@ export default function App() {
 
   // Generation complete handler
   const handleGenerationComplete = (result: {
-    ttfBlobUrl: string;
+    otfBlobUrl: string;
     registeredFontFamily: string;
     fileSizeBytes: number;
   }) => {
     // Release previously generated blob URLs before replacing them so
     // repeated generations don't leak object URLs for the session.
     const prev = projects.find((p) => p.id === activeProjectId);
+    if (prev?.otfBlobUrl) unregisterFontUrl(prev.otfBlobUrl);
     if (prev?.ttfBlobUrl) {
       try {
         URL.revokeObjectURL(prev.ttfBlobUrl);
@@ -330,8 +332,8 @@ export default function App() {
         return {
           ...proj,
           status: 'generated',
-          ttfBlobUrl: result.ttfBlobUrl,
-          otfBlobUrl: undefined,
+          ttfBlobUrl: undefined,
+          otfBlobUrl: result.otfBlobUrl,
           fontFamilyName: result.registeredFontFamily,
           fileSizeBytes: result.fileSizeBytes,
           lastGeneratedAt: 'Just now',
@@ -353,12 +355,21 @@ export default function App() {
     }
   };
 
-  // Upgrade user tier
+  // Upgrade user tier (demo checkout). Records a local 30-day subscription;
+  // expiry later flips entitlement back to Free without touching user data.
   const handleUpgradeTier = (tier: 'creator' | 'pro' = 'creator') => {
+    const now = Date.now();
+    const subscription = {
+      plan: 'pro' as const,
+      status: 'active' as const,
+      startedAt: now,
+      expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+    };
     if (user) {
       setUser({
         ...user,
         tier,
+        subscription,
       });
     } else {
       setUser({
@@ -369,9 +380,25 @@ export default function App() {
         tier,
         fontsCreatedCount: 1,
         totalDownloads: 0,
+        subscription,
       });
     }
   };
+
+  // Subscription expiry: entitlement returns to Free, projects and
+  // handwriting are never deleted. Runs on load and whenever the user
+  // record changes.
+  useEffect(() => {
+    if (!user || (user.tier !== 'pro' && user.tier !== 'creator')) return;
+    const sub = user.subscription;
+    if (sub && sub.status === 'active' && sub.expiresAt <= Date.now()) {
+      setUser({
+        ...user,
+        tier: 'free',
+        subscription: { ...sub, status: 'expired' },
+      });
+    }
+  }, [user]);
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50 text-neutral-900 font-sans selection:bg-amber-100 selection:text-neutral-900">
@@ -422,6 +449,7 @@ export default function App() {
                 setActiveProjectId(id);
                 setGenerationModalOpen(true);
               }}
+              onOpenPricing={() => setCurrentView('pricing')}
             />
           )}
 

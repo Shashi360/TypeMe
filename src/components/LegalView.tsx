@@ -47,7 +47,7 @@ const DOCS: Record<LegalDoc, Doc> = {
       {
         heading: 'How fonts are generated',
         body: [
-          'Glyphs are compiled in your browser into a TrueType (.ttf) file. The font file is produced on your device and handed straight back to you.',
+          'Glyphs are compiled in your browser into an OpenType (.otf) file. The font file is produced on your device and handed straight back to you.',
         ],
       },
       {

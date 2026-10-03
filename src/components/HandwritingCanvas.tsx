@@ -1332,6 +1332,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             <button
               type="button"
               onClick={handleClose}
+              aria-label="Close editor"
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E3] bg-white text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900"
             >
               <X className="h-4 w-4" />

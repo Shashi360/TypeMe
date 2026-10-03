@@ -49,6 +49,17 @@ export interface User {
   tier: 'free' | 'creator' | 'pro';
   fontsCreatedCount: number;
   totalDownloads: number;
+  /**
+   * Local subscription record (single-device demo architecture — a future
+   * backend/Supabase record is authoritative when present). Never delete
+   * user data on expiry; only entitlement flips back to Free.
+   */
+  subscription?: {
+    plan: 'pro';
+    status: 'active' | 'expired';
+    startedAt: number;
+    expiresAt: number;
+  };
 }
 
 export interface CommunityFont {
