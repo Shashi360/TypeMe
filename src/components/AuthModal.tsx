@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User } from '../types';
 import { ShieldCheck, ArrowRight, CheckCircle2, X } from 'lucide-react';
+import { normalizeIndianPhone, maskPhone } from '../utils/phone';
+import { OTP_POLICY } from '../utils/otpConfig';
+import { getOtpProvider, isDemoAuthEnabled } from '../utils/otpProvider';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -8,11 +11,7 @@ interface AuthModalProps {
   onSuccess: (user: User, isNewUser: boolean) => void;
 }
 
-// Development credentials isolated for local testing and demo validation
-const DEV_AUTH_CONFIG = {
-  DEV_PHONE: '7760593180',
-  DEV_OTP: '007347',
-};
+
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [step, setStep] = useState<'phone' | 'otp' | 'post_login' | 'onboarding_story'>('phone');
@@ -28,6 +27,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
   // Onboarding story index (0 to 3)
   const [storyIndex, setStoryIndex] = useState(0);
+  // Canonical phone for the in-flight attempt (set on send, cleared on change-number).
+  const [e164Phone, setE164Phone] = useState<string>('');
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -42,23 +43,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
   if (!isOpen) return null;
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
-    if (cleanPhone.length < 8) {
-      setErrorMessage('Please enter a valid phone number.');
+    const normalized = normalizeIndianPhone(phoneNumber, countryCode);
+    if (!normalized) {
+      setErrorMessage('Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+    const provider = getOtpProvider();
+    if (!provider) {
+      // Production build without a configured auth backend: never fake it.
+      setErrorMessage('Phone login needs server configuration in this build. Please try again later.');
       return;
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const res = await provider.requestOtp(normalized.e164);
+      if (!res.ok) {
+        setErrorMessage(res.message);
+        return;
+      }
+      setE164Phone(normalized.e164);
       setStep('otp');
-      setCountdown(30);
-      setOtp(['', '', '', '', '', '']);
+      setCountdown(OTP_POLICY.resendCooldownSeconds);
+      setOtp(Array(OTP_POLICY.length).fill(''));
       setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
-    }, 350);
+    } catch {
+      setErrorMessage("Couldn't send the code. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleOtpChange = (index: number, value: string) => {
@@ -104,37 +120,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     }
   };
 
-  const verifyOtpCode = (enteredOtp: string) => {
+  const verifyOtpCode = async (enteredOtp: string) => {
+    if (enteredOtp.length !== OTP_POLICY.length) {
+      setErrorMessage("That's not the right code. Try again.");
+      return;
+    }
+    const provider = getOtpProvider();
+    if (!provider || !e164Phone) {
+      setErrorMessage("Couldn't verify the code. Please try again.");
+      return;
+    }
     setIsSubmitting(true);
     setErrorMessage(null);
-
-    setTimeout(() => {
-      setIsSubmitting(false);
-      const cleanPhone = phoneNumber.replace(/\D/g, '');
-
-      // Check development credential verification
-      if (cleanPhone === DEV_AUTH_CONFIG.DEV_PHONE) {
-        if (enteredOtp !== DEV_AUTH_CONFIG.DEV_OTP) {
-          setErrorMessage("That's not the right code. Try again.");
-          return;
-        }
-      } else {
-        // For general numbers in development, accept valid 6 digits
-        if (enteredOtp.length !== 6) {
-          setErrorMessage("That's not the right code. Try again.");
-          return;
-        }
+    try {
+      const res = await provider.verifyOtp(e164Phone, enteredOtp);
+      if (!res.ok) {
+        setErrorMessage(res.message);
+        return;
       }
-
       // Transition to post-login story experience
       setStep('post_login');
-    }, 450);
+    } catch {
+      setErrorMessage("Couldn't verify the code. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    const provider = getOtpProvider();
+    if (!provider || !e164Phone) return;
+    setErrorMessage(null);
+    const res = await provider.requestOtp(e164Phone);
+    if (!res.ok) {
+      setErrorMessage(res.message);
+      return;
+    }
+    setCountdown(OTP_POLICY.resendCooldownSeconds);
+    setOtp(Array(OTP_POLICY.length).fill(''));
+    setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
   };
 
   const finalizeLogin = () => {
-    const fullPhone = `${countryCode} ${phoneNumber.trim()}`;
+    const national = e164Phone.replace(/\D/g, '').slice(-10);
     const authenticatedUser: User = {
-      phone: fullPhone,
+      phone: national ? `+91 ${national.slice(0, 5)} ${national.slice(5)}` : e164Phone,
       name: 'Shashi',
       isLoggedIn: true,
       isAdmin: true,
@@ -226,6 +256,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 </p>
               )}
 
+              {!isDemoAuthEnabled() ? (
+                <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-center">
+                  Phone login needs server configuration in this build — configure the OTP backend to enable it.
+                </p>
+              ) : null}
+
               <button
                 type="submit"
                 disabled={isSubmitting || phoneNumber.trim().length < 8}
@@ -262,9 +298,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 Enter your verification code
               </h3>
               <p className="text-xs text-neutral-500 mt-1">
-                We sent a 6-digit code to{' '}
+                We sent a {OTP_POLICY.length}-digit code to{' '}
                 <span className="font-semibold text-neutral-900 font-mono">
-                  {countryCode} {phoneNumber}
+                  {e164Phone ? maskPhone(e164Phone) : `${countryCode} ${phoneNumber}`}
                 </span>
                 .
               </p>
@@ -279,6 +315,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                   }}
                   type="text"
                   inputMode="numeric"
+                  autoComplete="one-time-code"
+                  aria-label={`Digit ${idx + 1} of ${OTP_POLICY.length}`}
                   maxLength={1}
                   value={digit}
                   onChange={(e) => handleOtpChange(idx, e.target.value)}
@@ -300,10 +338,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                   <>Resend code in <span className="font-mono">{countdown}s</span></>
                 ) : (
                   <button
-                    onClick={() => {
-                      setCountdown(30);
-                      setErrorMessage(null);
-                    }}
+                    onClick={handleResend}
                     className="text-neutral-900 font-semibold underline hover:text-neutral-700 cursor-pointer"
                   >
                     Didn't receive it? Resend code
