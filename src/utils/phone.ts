@@ -37,3 +37,16 @@ export const maskPhone = (e164: string): string => {
   if (!m) return e164;
   return `${m[1]} ••••• ${m[3]}`;
 };
+
+/**
+ * Lenient E.164 for already-accepted display forms ("+91 77605 93180",
+ * "917760593180", "7760593180"). Returns null when unrecognizable — callers
+ * skip the server sync and keep local mode.
+ */
+export const toE164Loose = (raw: string): string | null => {
+  const d = (raw || "").replace(/\D/g, "");
+  if (/^[6-9]\d{9}$/.test(d)) return `+91${d}`;
+  if (/^91[6-9]\d{9}$/.test(d)) return `+${d}`;
+  if (/^\d{8,15}$/.test(d)) return `+${d}`;
+  return null;
+};

@@ -31,8 +31,12 @@ import {
   deleteServerProject,
   upsertGlyph as upsertServerGlyph,
   deleteGlyphVariantsFrom as deleteServerVariantsFrom,
+  syncProfilePhone,
+  createPendingSubscription,
+  readMyEntitlement,
 } from './utils/db';
 import { ensureSupabaseSession } from './utils/supabaseSession';
+import { toE164Loose } from './utils/phone';
 
 export default function App() {
   // User state
@@ -107,7 +111,7 @@ export default function App() {
   // load was still in flight) — in that case we refetch and apply fresh.
   const serverMut = useRef(0);
 
-  const enterServerMode = async (baseLocal: FontProject[]) => {
+  const enterServerMode = async (baseLocal: FontProject[], phoneRaw?: string | null) => {
     const run = ++serverRun.current;
     setServerLoading(true);
     establishingRef.current = true;
@@ -119,6 +123,39 @@ export default function App() {
       const uid = await ensureSupabaseSession();
       if (run !== serverRun.current) return;
       setServerUidSync(uid);
+      // Tie the login phone to this profile (production identity join:
+      // profiles.phone <-> projects/subscriptions via user_id).
+      const e164 = phoneRaw ? toE164Loose(phoneRaw) : null;
+      if (e164) syncProfilePhone(e164).catch(() => {});
+      // Backend truth wins: a server-activated Pro (Razorpay webhook) is
+      // adopted locally. A local demo Pro is kept when the server is free.
+      readMyEntitlement()
+        .then((ent) => {
+          const e = ent as {
+            plan?: string;
+            isPro?: boolean;
+            isActive?: boolean;
+            startedAt?: number | null;
+            expiresAt?: number | null;
+          } | null;
+          if (run === serverRun.current && e?.isPro && e?.isActive) {
+            setUser((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    tier: 'pro',
+                    subscription: {
+                      plan: 'pro',
+                      status: 'active',
+                      startedAt: e.startedAt ?? Date.now(),
+                      expiresAt: e.expiresAt ?? Date.now() + 30 * 24 * 60 * 60 * 1000,
+                    },
+                  }
+                : prev
+            );
+          }
+        })
+        .catch(() => {});
       // Re-read the local cache: projects created while the session was
       // being established are in localStorage but not in the login-time
       // snapshot. Union by id so nothing created mid-flight is skipped.
@@ -169,7 +206,7 @@ export default function App() {
   useEffect(() => {
     if (!user || serverRestored.current) return;
     serverRestored.current = true;
-    void enterServerMode(projects);
+    void enterServerMode(projects, user.phone).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -305,7 +342,7 @@ export default function App() {
     // then replace the dashboard source with the verified server response.
     // Runs in the background; local cache stays visible meanwhile.
     serverRestored.current = true;
-    void enterServerMode(projects).catch(() => {});
+    void enterServerMode(projects, authenticatedUser.phone).catch(() => {});
     if (isNewUser) {
       setOnboardingModalOpen(true);
     } else {
@@ -643,6 +680,18 @@ export default function App() {
       startedAt: now,
       expiresAt: now + 30 * 24 * 60 * 60 * 1000,
     };
+    if (serverUidRef.current) {
+      // Production trace: phone join + pending subscription row owned by
+      // auth.uid(). Requires migrations/02-checkout-intent.sql; until it is
+      // applied this 42501s and the local demo activation below still holds.
+      const e164 = toE164Loose(user.phone);
+      if (e164) syncProfilePhone(e164).catch(() => {});
+      if (tier === 'pro') {
+        createPendingSubscription('pro', 30).catch((err) => {
+          console.warn('Pending subscription not recorded (apply migrations/02-checkout-intent.sql):', err);
+        });
+      }
+    }
     setUser({
       ...user,
       tier,

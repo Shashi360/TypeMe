@@ -324,15 +324,37 @@ create policy "generation_jobs_select_own"
 
 -- Subscriptions: read-own only. Plan/status/expiry changes are backend-only
 -- (service role); a browser request can NEVER promote itself to Pro.
+-- Exception (see migrations/02-checkout-intent.sql): users may record their
+-- OWN checkout intent while status stays 'pending' — activation remains
+-- backend-only and the entitlement RPC honors active rows exclusively.
 create policy "subscriptions_select_own"
   on public.subscriptions for select
   using (user_id = auth.uid());
 
+create policy "subscriptions_insert_own_pending"
+  on public.subscriptions for insert
+  to authenticated
+  with check (user_id = auth.uid() and status = 'pending');
+
+create policy "subscriptions_update_own_pending"
+  on public.subscriptions for update
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid() and status = 'pending');
+
 -- Payments: read-own history only. Verification + status writes are
--- backend-only.
+-- backend-only; users may only record non-verified intents.
 create policy "payments_select_own"
   on public.payments for select
   using (user_id = auth.uid());
+
+create policy "payments_insert_own_initiated"
+  on public.payments for insert
+  to authenticated
+  with check (
+    user_id = auth.uid()
+    and status in ('pending', 'failed', 'cancelled')
+  );
 
 create policy "user_settings_all_own"
   on public.user_settings for all

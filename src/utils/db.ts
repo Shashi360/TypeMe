@@ -385,8 +385,7 @@ export const deleteServerProject = async (id: string): Promise<void> => {
 /**
  * Remove stale variant rows at/after a cutoff (e.g. user deleted variants in
  * the editor). Without this, normalize would resurrect deleted variants.
- */
-export const deleteGlyphVariantsFrom = async (
+ */export const deleteGlyphVariantsFrom = async (
   projectId: string,
   character: string,
   fromVariant: number,
@@ -401,4 +400,77 @@ export const deleteGlyphVariantsFrom = async (
     .eq("character", character)
     .gte("variant_number", fromVariant);
   if (error) throw error;
+};
+
+// ---------------------------------------------------------------------------
+// Identity + checkout intent. Ownership always derives from the session.
+// ---------------------------------------------------------------------------
+
+/**
+ * Tie the login phone number to the authenticated profile so fonts,
+ * subscriptions and payments join to a human identity via user_id.
+ * Allowed by profiles_update_own (verified live). Best-effort: callers
+ * swallow failures and keep local mode working.
+ */
+export const syncProfilePhone = async (e164: string): Promise<void> => {
+  const sb = getSupabase();
+  if (!sb) throw new Error(NOT_CONFIGURED);
+  const uid = await sessionUid();
+  const { error } = await sb
+    .from("profiles")
+    .update({ phone: e164 })
+    .eq("id", uid);
+  if (error) throw error;
+};
+
+export interface DbSubscription {
+  id: string;
+  user_id: string;
+  plan: string;
+  status: string;
+  started_at: string | null;
+  expires_at: string | null;
+};
+
+/**
+ * Record a checkout intent as a PENDING subscription row owned by auth.uid().
+ * Requires supabase/migrations/02-checkout-intent.sql (pending self-insert +
+ * self-update policies). Throws 42501 until it is applied — callers treat
+ * that as "server trace unavailable" and keep the local demo activation.
+ * Activation (pending -> active) stays backend-only (Razorpay webhook via
+ * service_role); the entitlement RPC honors active rows exclusively.
+ */
+export const createPendingSubscription = async (
+  plan: "pro",
+  days = 30,
+): Promise<DbSubscription> => {
+  const sb = getSupabase();
+  if (!sb) throw new Error(NOT_CONFIGURED);
+  const uid = await sessionUid();
+  const now = new Date();
+  const row = {
+    user_id: uid,
+    plan,
+    status: "pending",
+    started_at: now.toISOString(),
+    expires_at: new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString(),
+  };
+  const { data, error } = await sb
+    .from("subscriptions")
+    .upsert(row, { onConflict: "user_id" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as DbSubscription;
+};
+
+/** Read my subscription row (RLS-scoped). Null when none exists. */
+export const readMySubscription = async (): Promise<DbSubscription | null> => {
+  const sb = getSupabase();
+  if (!sb) throw new Error(NOT_CONFIGURED);
+  await sessionUid();
+  const { data, error } = await sb.from("subscriptions").select("*").limit(1);
+  if (error) throw error;
+  const rows = (data ?? []) as DbSubscription[];
+  return rows[0] ?? null;
 };
