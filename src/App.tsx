@@ -629,7 +629,13 @@ export default function App() {
 
   // Upgrade user tier (demo checkout). Records a local 30-day subscription;
   // expiry later flips entitlement back to Free without touching user data.
+  // Requires a real logged-in user: guests are sent to login and Pro is
+  // never granted to a fabricated account.
   const handleUpgradeTier = (tier: 'creator' | 'pro' = 'creator') => {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
     const now = Date.now();
     const subscription = {
       plan: 'pro' as const,
@@ -637,24 +643,11 @@ export default function App() {
       startedAt: now,
       expiresAt: now + 30 * 24 * 60 * 60 * 1000,
     };
-    if (user) {
-      setUser({
-        ...user,
-        tier,
-        subscription,
-      });
-    } else {
-      setUser({
-        phone: '+91 98765 43210',
-        name: 'Creator',
-        isLoggedIn: true,
-        isAdmin: true,
-        tier,
-        fontsCreatedCount: 1,
-        totalDownloads: 0,
-        subscription,
-      });
-    }
+    setUser({
+      ...user,
+      tier,
+      subscription,
+    });
   };
 
   // Subscription expiry: entitlement returns to Free, projects and
@@ -816,6 +809,7 @@ export default function App() {
                 if (!user) setAuthModalOpen(true);
                 else setCurrentView('dashboard');
               }}
+              onOpenAuth={() => setAuthModalOpen(true)}
             />
           )}
         </div>

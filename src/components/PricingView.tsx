@@ -6,17 +6,26 @@ interface PricingViewProps {
   user: User | null;
   onUpgradeTier: (tier: 'creator' | 'pro') => void;
   onStartFree: () => void;
+  onOpenAuth: () => void;
 }
 
 export const PricingView: React.FC<PricingViewProps> = ({
   user,
   onUpgradeTier,
   onStartFree,
+  onOpenAuth,
 }) => {
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleSimulatePayment = () => {
+    // Defense in depth: checkout requires a real account even if the modal
+    // were opened without one.
+    if (!user) {
+      setCheckoutModalOpen(false);
+      onOpenAuth();
+      return;
+    }
     setIsProcessing(true);
     setTimeout(() => {
       setIsProcessing(false);
@@ -218,8 +227,18 @@ export const PricingView: React.FC<PricingViewProps> = ({
               disabled={isProcessing}
               className="w-full py-3 px-4 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
-              {isProcessing ? 'Activating Pro...' : 'Confirm & Start Pro (₹99/month)'}
+              {isProcessing
+                ? 'Activating Pro...'
+                : user
+                  ? 'Confirm & Start Pro (₹99/month)'
+                  : 'Log in to continue'}
             </button>
+            {!user ? (
+              <p className="text-[11px] text-neutral-500 font-mono">
+                Pro checkout needs a TypeMe account — no payment is taken
+                before you log in.
+              </p>
+            ) : null}
           </div>
         </div>
       )}
