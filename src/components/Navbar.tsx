@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { User, AppView } from '../types';
 import { User as UserIcon, LogOut, Menu, X, FolderOpen, Plus, Shield, BookOpen, Compass, PenTool, HelpCircle, Layers } from 'lucide-react';
 
@@ -23,6 +23,21 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+  // Smooth drawer behavior: lock body scroll + close on Escape.
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [mobileMenuOpen]);
 
   const scrollToAnchor = (anchorId: string) => {
     const el = document.getElementById(anchorId);
@@ -279,9 +294,37 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile Drawer Navigation */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-neutral-200 bg-white px-4 py-4 space-y-2 text-xs">
+      {/* Mobile overlay */}
+      <div
+        aria-hidden={!mobileMenuOpen}
+        onClick={() => setMobileMenuOpen(false)}
+        className={`fixed inset-0 z-[75] bg-neutral-900/30 backdrop-blur-[1px] transition-opacity duration-300 lg:hidden ${
+          mobileMenuOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+      />
+      {/* Mobile Drawer Navigation — slides in from the right */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Menu"
+        className={`fixed right-0 top-0 z-[80] flex h-dvh w-[85vw] max-w-xs flex-col bg-white shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:hidden ${
+          mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
+          <div className="flex items-baseline">
+            <span className="text-lg font-bold tracking-tight text-neutral-900 font-sans">Type</span>
+            <span className="text-xl font-bold text-neutral-900 font-handwriting italic -ml-0.5">Me</span>
+          </div>
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Close menu"
+            className="p-2 text-neutral-600 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2 text-xs">
           {!user ? (
             <>
               <button
@@ -392,7 +435,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </>
           )}
         </div>
-      )}
+      </div>
     </header>
   );
 };
