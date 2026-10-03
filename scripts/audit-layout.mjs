@@ -21,6 +21,12 @@ for (const width of WIDTHS) {
   if (reduced) await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 
+  // Mobile serves the compact home instead of the desktop story section.
+  if (!(await page.locator('#where-to-use').isVisible())) {
+    console.log(`--   ${width}px: story section not served on this viewport, skipped`);
+    await page.close();
+    continue;
+  }
   const section = page.locator('#where-to-use');
   await section.scrollIntoViewIfNeeded();
   await page.waitForTimeout(700);

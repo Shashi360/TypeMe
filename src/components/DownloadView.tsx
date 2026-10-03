@@ -37,29 +37,28 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
   onUpgrade,
 }) => {
   const [copiedCss, setCopiedCss] = useState(false);
-  const [copiedShareLink, setCopiedShareLink] = useState(false);
 
   const cleanFileName = project.name.replace(/[^a-zA-Z0-9_-]/g, '_') || 'MyHandwriting';
 
-  // Format file size
+  // Format file size (unknown until a font is generated — never fake it)
   const sizeKb = project.fileSizeBytes
     ? (project.fileSizeBytes / 1024).toFixed(1)
-    : '28.4';
+    : '—';
 
   const ent = useMemo(() => getEntitlements(tier), [tier]);
   const [upgrade, setUpgrade] = useState<UpgradeCopy | null>(null);
 
-  const handleDownload = (type: 'ttf' | 'otf') => {
+  const handleDownload = () => {
     if (!ent.canDownloadFont()) {
       setUpgrade(upgradeForDownload);
       return;
     }
-    const url = type === 'ttf' ? project.ttfBlobUrl : project.otfBlobUrl;
+    const url = project.ttfBlobUrl;
     if (!url) return;
 
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${cleanFileName}.${type}`;
+    a.download = `${cleanFileName}.ttf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -78,13 +77,6 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
     navigator.clipboard.writeText(cssSnippet);
     setCopiedCss(true);
     setTimeout(() => setCopiedCss(false), 2000);
-  };
-
-  const handleCopyShareLink = () => {
-    const fakeUrl = `${window.location.origin}/font/${project.id}`;
-    navigator.clipboard.writeText(fakeUrl);
-    setCopiedShareLink(true);
-    setTimeout(() => setCopiedShareLink(false), 2000);
   };
 
   const previewFont = project.fontFamilyName
@@ -126,12 +118,12 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Download Options Grid */}
+      {/* 2. Download */}
       <div className="space-y-4">
-        <h2 className="text-lg font-bold text-neutral-900 font-serif">Download Formats</h2>
+        <h2 className="text-lg font-bold text-neutral-900 font-serif">Download</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* TTF Card */}
+        <div className="grid grid-cols-1 gap-4">
+          {/* TTF Card — the only format the generator honestly produces */}
           <div className="p-6 rounded-2xl bg-white border border-neutral-200 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -147,7 +139,7 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
             </div>
 
             <button
-              onClick={() => handleDownload('ttf')}
+              onClick={() => handleDownload()}
               disabled={!project.ttfBlobUrl}
               className="mt-6 w-full py-2.5 px-4 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-40 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
@@ -155,34 +147,6 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
               <span>Download TrueType (.ttf)</span>
               {!ent.canDownloadFont() ? (
                 <span className="text-[10px] font-bold uppercase tracking-wider bg-white/15 px-1.5 py-0.5 rounded">Pro</span>
-              ) : null}
-            </button>
-          </div>
-
-          {/* OTF Card */}
-          <div className="p-6 rounded-2xl bg-white border border-neutral-200 shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-neutral-100 text-neutral-800 border border-neutral-200">
-                  OTF
-                </span>
-                <span className="text-xs text-neutral-400 font-mono tabular-nums">{sizeKb} KB</span>
-              </div>
-              <h3 className="text-base font-bold text-neutral-900 font-serif">OpenType Font</h3>
-              <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
-                Advanced vector font format supporting alternate glyph tables and high-precision typographic metrics in design software.
-              </p>
-            </div>
-
-            <button
-              onClick={() => handleDownload('otf')}
-              disabled={!project.otfBlobUrl}
-              className="mt-6 w-full py-2.5 px-4 text-xs font-semibold text-neutral-900 bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 rounded-xl transition-colors border border-neutral-200 flex items-center justify-center gap-2 cursor-pointer"
-            >
-              {ent.canDownloadFont() ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-              <span>Download OpenType (.otf)</span>
-              {!ent.canDownloadFont() ? (
-                <span className="text-[10px] font-bold uppercase tracking-wider bg-neutral-900/10 px-1.5 py-0.5 rounded">Pro</span>
               ) : null}
             </button>
           </div>
@@ -204,18 +168,18 @@ export const DownloadView: React.FC<DownloadViewProps> = ({
           </div>
 
           <button
-            onClick={handleCopyShareLink}
+            onClick={handleCopyCss}
             className="px-4 py-2 text-xs font-semibold text-neutral-900 bg-white hover:bg-neutral-100 rounded-xl transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
           >
-            {copiedShareLink ? (
+            {copiedCss ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Link Copied!</span>
+                <span>CSS Copied!</span>
               </>
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5" />
-                <span>Share My Font</span>
+                <span>Copy Font CSS</span>
               </>
             )}
           </button>

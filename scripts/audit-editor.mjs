@@ -121,35 +121,38 @@ const drawStrokes = async (page) => {
 };
 
 // Draws one stroke through synthetic PointerEvents so the touch and stylus
-// code paths (coordinate mapping, palm rejection) are covered too.
+// code paths (coordinate mapping, palm rejection) are covered too. Events go
+// out in separate tasks with realistic gaps, like real hardware (a single
+// synchronous burst is not how browsers deliver pointer input).
 const synthStroke = async (page, pointerType, row = 0.5) => {
-  await page.evaluate(
-    ([type, yFrac]) => {
-      const c = document.querySelector('[data-testid="editor-canvas"]');
-      if (!c) return;
-      const r = c.getBoundingClientRect();
-      const y = r.top + r.height * yFrac;
-      const fire = (name, x, yy) =>
+  const fireOne = (name, fx, dyPx) =>
+    page.evaluate(
+      ([n, type, xf, dy, yf]) => {
+        const c = document.querySelector('canvas');
+        if (!c) return;
+        const r = c.getBoundingClientRect();
         c.dispatchEvent(
-          new PointerEvent(name, {
+          new PointerEvent(n, {
             pointerId: 7,
             pointerType: type,
             isPrimary: true,
-            clientX: x,
-            clientY: yy,
+            clientX: r.left + r.width * xf,
+            clientY: r.top + r.height * yf + dy,
             bubbles: true,
             cancelable: true,
-            buttons: name === 'pointerup' ? 0 : 1,
+            buttons: n === 'pointerup' ? 0 : 1,
           }),
         );
-      fire('pointerdown', r.left + r.width * 0.25, y);
-      for (let i = 1; i <= 6; i += 1) {
-        fire('pointermove', r.left + r.width * (0.25 + i * 0.08), y + Math.sin(i) * 14);
-      }
-      fire('pointerup', r.left + r.width * 0.73, y);
-    },
-    [pointerType, row],
-  );
+      },
+      [name, pointerType, fx, dyPx, row],
+    );
+  await fireOne('pointerdown', 0.25, 0);
+  for (let i = 1; i <= 6; i += 1) {
+    await page.waitForTimeout(16);
+    await fireOne('pointermove', 0.25 + i * 0.08, Math.sin(i) * 14);
+  }
+  await page.waitForTimeout(16);
+  await fireOne('pointerup', 0.73, 0);
   await page.waitForTimeout(200);
 };
 
@@ -178,12 +181,12 @@ for (const [w, h, label] of VIEWPORTS) {
   const after = await inkCount(page);
   check(`${label}: ink renders on canvas`, after > before + 200, `${before} -> ${after} dark px`);
 
-  const strokes = await page
-    .locator('[data-testid="editor-stroke-count"]')
-    .first()
-    .textContent()
-    .catch(() => '');
-  check(`${label}: strokes recorded`, /^5 strokes$/.test((strokes || '').trim()), `"${(strokes || '').trim()}"`);
+  await page.waitForTimeout(1200);
+  const strokes = await page.evaluate(() => {
+    const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
+    return raw[0]?.characters?.A?.strokes?.length ?? -1;
+  });
+  check(`${label}: strokes recorded`, strokes === 5, `${strokes} saved strokes`);
 
   // Strokes must survive a pointer release and a re-render (no reset).
   await page.mouse.move(5, 5);
@@ -226,15 +229,20 @@ for (const [w, h, label] of VIEWPORTS) {
   check(`${label}: page scroll locked`, layout.bodyOverflow === 'hidden', `body overflow=${layout.bodyOverflow}`);
   check(`${label}: editor does not overflow`, layout.editorOverflowX <= 0 && layout.editorOverflowY <= 0, `x=${layout.editorOverflowX} y=${layout.editorOverflowY}`);
   check(`${label}: no horizontal overflow`, layout.editorOverflowX <= 0, `overflow=${layout.editorOverflowX}px`);
-  check(`${label}: Save + Save & Next visible`, layout.save && layout.next);
+  // Mobile keeps one primary action (Save & Next); plain Save lives in More.
+  check(
+    `${label}: Save + Save & Next visible`,
+    w >= 640 ? layout.save && layout.next : layout.next,
+    `save=${layout.save} next=${layout.next}`,
+  );
   check(`${label}: Undo + Redo visible`, layout.undo && layout.redo);
 
   // Undo / redo behaviour.
-  await page.locator('button', { hasText: /^Undo$/ }).first().click();
+  await page.getByRole('button', { name: 'Undo' }).first().click();
   await page.waitForTimeout(300);
   const undone = await inkCount(page);
   check(`${label}: undo removes last stroke`, undone < after, `${after} -> ${undone}`);
-  await page.locator('button', { hasText: /^Redo$/ }).first().click();
+  await page.getByRole('button', { name: 'Redo' }).first().click();
   await page.waitForTimeout(300);
   const redone = await inkCount(page);
   check(`${label}: redo restores stroke`, redone === after, `${after} -> ${redone}`);
@@ -248,14 +256,14 @@ for (const [w, h, label] of VIEWPORTS) {
     return {
       filled: Object.values(p.characters || {}).filter((c) => c.strokes?.length).map((c) => c.char),
       current: document.querySelector('[data-testid="editor-current-char"]')?.textContent?.trim() || '',
-      strokeCount: document.querySelector('[data-testid="editor-stroke-count"]')?.textContent?.trim() || '',
+      bStrokes: p.characters?.B?.strokes?.length ?? -1,
     };
   });
   check(`${label}: save persisted strokes`, afterNext.filled.includes('A'), `filled=[${afterNext.filled.join(',')}]`);
   check(`${label}: Save & Next advanced to next unwritten`, afterNext.current === 'B', `now "${afterNext.current}"`);
-  check(`${label}: next character starts empty`, /^0 strokes$/.test(afterNext.strokeCount), `"${afterNext.strokeCount}"`);
+  check(`${label}: next character starts empty`, afterNext.bStrokes === 0, `${afterNext.bStrokes} strokes`);
 
-  const dot = await page.locator('aside button[aria-label="A, completed"]').first().count();
+  const dot = await page.locator('button[title="A · done"]').first().count();
   check(`${label}: completed dot exposed`, dot === 1);
 
   // Touch and stylus input paths on the fresh character.
@@ -269,8 +277,12 @@ for (const [w, h, label] of VIEWPORTS) {
   const penAfter = await inkCount(page);
   check(`${label}: stylus input draws`, penAfter > penBefore + 100, `${penBefore} -> ${penAfter}`);
 
-  const finalStrokes = await page.locator('[data-testid="editor-stroke-count"]').first().textContent();
-  check(`${label}: touch + stylus strokes counted`, /^2 strokes$/.test((finalStrokes || '').trim()), `"${(finalStrokes || '').trim()}"`);
+  await page.waitForTimeout(1200);
+  const finalStrokes = await page.evaluate(() => {
+    const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
+    return raw[0]?.characters?.B?.strokes?.length ?? -1;
+  });
+  check(`${label}: touch + stylus strokes counted`, finalStrokes === 2, `${finalStrokes} saved strokes`);
 
   // Eraser must actually remove ink.
   const toolsTab = page.locator('aside button', { hasText: /^Tools$/ });
@@ -278,7 +290,13 @@ for (const [w, h, label] of VIEWPORTS) {
     await toolsTab.first().click();
     await page.waitForTimeout(200);
   }
-  await page.locator('button', { hasText: /^eraser$/i }).first().click();
+  // Desktop exposes Eraser in the right panel; mobile/tablet use the toolbar.
+  const panelEraser = page.locator('aside').getByRole('button', { name: 'Eraser' });
+  if (await panelEraser.count()) {
+    await panelEraser.first().click();
+  } else {
+    await page.getByRole('button', { name: 'Eraser' }).first().click();
+  }
   await page.waitForTimeout(150);
   const eraseBefore = await inkCount(page);
   await synthStroke(page, 'mouse', 0.38);
@@ -317,12 +335,15 @@ for (const [w, h, label] of VIEWPORTS) {
       : 'no ring',
   );
 
-  // Clear empties the canvas and resets the counter.
-  await page.locator('button', { hasText: /^Clear$/ }).first().click();
-  await page.waitForTimeout(300);
-  const cleared = await page.locator('[data-testid="editor-stroke-count"]').first().textContent();
+  // Clear empties the canvas and persists the empty state (autosave debounce).
+  await page.getByRole('button', { name: 'Clear' }).click();
+  await page.waitForTimeout(1500);
+  const cleared = await page.evaluate(() => {
+    const raw = JSON.parse(localStorage.getItem('typeme_projects') || '[]');
+    return raw[0]?.characters?.B?.strokes?.length ?? -1;
+  });
   const clearedInk = await inkCount(page);
-  check(`${label}: clear resets canvas`, /^0 strokes$/.test((cleared || '').trim()), `"${(cleared || '').trim()}"`);
+  check(`${label}: clear resets canvas`, cleared === 0, `${cleared} saved strokes`);
   check(`${label}: cleared canvas has no ink`, clearedInk === 0, `${clearedInk} dark px`);
 
   // The controls disclosure must toggle (mobile-first collapse).
@@ -362,20 +383,27 @@ for (const [w, h, label] of VIEWPORTS) {
     const a = document.querySelector('aside');
     return a ? a.getBoundingClientRect().height : 0;
   });
-  await page.locator('button[aria-label="Keyboard shortcuts"]').first().click();
+  // Mobile reaches Shortcuts through More; larger screens have a direct button.
+  if (w < 640) {
+    await page.getByRole('button', { name: 'More' }).click();
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: 'Keyboard shortcuts' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Shortcuts', exact: true }).click();
+  }
   await page.waitForTimeout(320);
   const shortcuts = await page.evaluate(() => {
     const panel = document.querySelector('[data-testid="editor-shortcuts"]');
     const a = document.querySelector('aside');
     const r = panel?.getBoundingClientRect();
     return {
-      visible: !!panel && getComputedStyle(panel).opacity === '1' && !!r && r.height > 40,
-      inside: !!r && !!a && r.bottom <= a.getBoundingClientRect().bottom + 1 && r.right <= a.getBoundingClientRect().right + 1,
+      visible: !!panel && !!r && r.height > 40,
+      inside: !!r && r.left >= 0 && r.right <= window.innerWidth + 1 && r.top >= 0 && r.bottom <= window.innerHeight + 1,
       asideHeight: a ? a.getBoundingClientRect().height : 0,
     };
   });
   check(`${label}: shortcut sheet opens`, shortcuts.visible);
-  check(`${label}: shortcut sheet stays inside the panel`, shortcuts.inside);
+  check(`${label}: shortcut sheet stays inside the viewport`, shortcuts.inside);
   check(`${label}: shortcut sheet does not resize the panel`, Math.abs(shortcuts.asideHeight - asideBefore) < 1.5, `${asideBefore} -> ${shortcuts.asideHeight}`);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);

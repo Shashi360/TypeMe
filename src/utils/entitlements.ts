@@ -112,6 +112,6 @@ export const upgradeForCharacters: UpgradeCopy = {
 export const upgradeForDownload: UpgradeCopy = {
   feature: "Font downloads",
   description:
-    "Your font is ready. Upgrade to TypeMe Pro (₹99/month) to download your TTF and OTF files.",
-  bullets: ["TTF + OTF downloads", "Install on any device", "Complete font generation"],
+    "Your font is ready. Upgrade to TypeMe Pro (₹99/month) to download your TTF font file.",
+  bullets: ["TTF font download", "Install on any device", "Complete font generation"],
 };

@@ -855,7 +855,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <span className="text-xs font-mono font-bold text-neutral-400">STEP 4</span>
               <h3 className="text-xl font-bold text-neutral-900 font-serif">Download</h3>
               <p className="text-xs text-neutral-600 leading-relaxed">
-                Download your .TTF and .OTF font files and select them directly in Word, Photoshop, or GoodNotes.
+                Download your .TTF font file and select it directly in Word, Photoshop, or GoodNotes.
               </p>
               <div className="text-xs font-mono text-neutral-900 pt-2 flex items-center gap-1">
                 <Download className="w-3.5 h-3.5" /> Ready to install

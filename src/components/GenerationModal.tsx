@@ -11,7 +11,6 @@ interface GenerationModalProps {
   onClose: () => void;
   onGenerationComplete: (result: {
     ttfBlobUrl: string;
-    otfBlobUrl: string;
     registeredFontFamily: string;
     fileSizeBytes: number;
   }) => void;
@@ -102,7 +101,6 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
           setTimeout(() => {
             onGenerationComplete({
               ttfBlobUrl: result.ttfUrl,
-              otfBlobUrl: result.otfUrl,
               registeredFontFamily: result.registeredFontFamily,
               fileSizeBytes: result.fileSizeBytes,
             });
@@ -279,7 +277,7 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
               <span>Your font is ready to download</span>
             </div>
             <p className="text-[11px] text-neutral-600 mt-1 leading-relaxed">
-              Upgrade to TypeMe Pro (₹99/month) to download your TTF and OTF files.
+              Upgrade to TypeMe Pro (₹99/month) to download your TTF font file.
             </p>
             <div className="flex gap-2 mt-3">
               <button

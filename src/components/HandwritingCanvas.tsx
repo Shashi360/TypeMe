@@ -185,6 +185,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [activeVariant, setActiveVariant] = useState<number>(-1);
   const [currentStroke, setCurrentStroke] = useState<Point[] | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  // Ref mirrors for the pointer guards: state updates are async, so a burst
+  // of synchronous events (fast stylus, coalesced moves, synthetic dispatch)
+  // must still see the drawing session started by pointerdown.
+  const isDrawingRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
+  // Last hover position for the eraser ring (gates re-renders by distance).
+  const eraserHoverRef = useRef<{ x: number; y: number } | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>("pen");
   const [brushType, setBrushType] = useState<BrushType>("gel");
   const [strokeSize, setStrokeSize] = useState<StrokeSize>("regular");
@@ -193,6 +200,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  // Surfaces persistence failures (e.g. storage quota) instead of failing
+  // silently — unsaved strokes are never dropped, retry stays available.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [showQuality, setShowQuality] = useState(false);
@@ -270,7 +280,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   );
 
   const pushUndo = useCallback(() => {
-    setUndoStack((prev) => [...prev, snapshotNow()]);
+    // Cap history so marathon sessions can't grow memory without bound.
+    setUndoStack((prev) => [...prev, snapshotNow()].slice(-50));
     setRedoStack([]);
   }, [snapshotNow]);
 
@@ -309,6 +320,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setCurrentStroke(null);
     setQuality(null);
     setShowQuality(false);
+    // Clearing changes persisted state — mark dirty so autosave persists the
+    // empty canvas instead of leaving a stale saved dot behind.
+    setIsDirty(true);
   }, [activeStrokes.length, pushUndo, setActiveStrokes]);
 
   const removeVariant = useCallback(
@@ -414,10 +428,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       } as CharacterData;
       await onSave(data);
       setIsDirty(false);
+      setSaveError(null);
       setValidationMsg(null);
       setLastSavedAt(Date.now());
     } catch (err) {
       console.error("Failed to save character:", err);
+      setSaveError("Save failed — strokes kept. Tap to retry.");
       throw err;
     } finally {
       setIsSaving(false);
@@ -636,6 +652,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       capturePointer(e);
       if (isEraser) {
         pushUndo();
+        isDrawingRef.current = true;
+        pointerIdRef.current = e.pointerId;
         setIsDrawing(true);
         setPointerId(e.pointerId);
         const p = getCanvasPoint(e.clientX, e.clientY);
@@ -651,6 +669,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         return;
       }
       pushUndo();
+      isDrawingRef.current = true;
+      pointerIdRef.current = e.pointerId;
       setIsDrawing(true);
       setPointerId(e.pointerId);
       const p = getCanvasPoint(e.clientX, e.clientY);
@@ -825,7 +845,16 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
   const moveDrawing = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (!isDrawing || (pointerId !== null && e.pointerId !== pointerId)) return;
+      // Hover ring follows the pointer in eraser mode even without buttons
+      // pressed; distance-gated so hover doesn't re-render every mousemove.
+      if (isEraser) {
+        const prev = eraserHoverRef.current;
+        if (!prev || Math.hypot(e.clientX - prev.x, e.clientY - prev.y) > 3) {
+          eraserHoverRef.current = { x: e.clientX, y: e.clientY };
+          setEraserPos(eraserHoverRef.current);
+        }
+      }
+      if (!isDrawingRef.current || (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current)) return;
       const p = getCanvasPoint(e.clientX, e.clientY);
       if (!p) return;
       setEraserPos({ x: e.clientX, y: e.clientY });
@@ -848,15 +877,18 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       }
       e.preventDefault();
     },
-    [eraseAt, getCanvasPoint, isDrawing, isEraser, lastPoint, lastPointerTime, pointerId],
+    [eraseAt, getCanvasPoint, isEraser, lastPoint, lastPointerTime],
   );
 
   const endDrawing = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (pointerId !== null && e.pointerId !== pointerId) return;
+      if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
       releasePointer(e);
+      isDrawingRef.current = false;
+      pointerIdRef.current = null;
       setIsDrawing(false);
       setPointerId(null);
+      eraserHoverRef.current = null;
       setEraserPos(null);
       if (!isEraser && currentStroke && currentStroke.length > 0) {
         const stroke: Stroke = currentStroke.map((p) => ({ x: p.x, y: p.y }));
@@ -868,12 +900,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       setPointerSamples([]);
       e.preventDefault();
     },
-    [activeStrokes, activeStyles, brushType, currentStroke, isEraser, pointerId, releasePointer, setActiveStrokes, strokeSize],
+    [activeStrokes, activeStyles, brushType, currentStroke, isEraser, releasePointer, setActiveStrokes, strokeSize],
   );
 
   const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (pointerId !== null && e.pointerId !== pointerId) return;
+    if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
     releasePointer(e);
+    isDrawingRef.current = false;
+    pointerIdRef.current = null;
+    eraserHoverRef.current = null;
     setIsDrawing(false);
     setPointerId(null);
     setCurrentStroke(null);
@@ -881,7 +916,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setPointerSamples([]);
     setEraserPos(null);
     e.preventDefault();
-  }, [pointerId, releasePointer]);
+  }, [releasePointer]);
 
   useEffect(() => {
     draw();
@@ -1261,6 +1296,18 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
         {/* Right */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {saveError ? (
+            <button
+              type="button"
+              onClick={() => performSave().catch(() => {})}
+              title={saveError}
+              className="flex items-center gap-1.5 rounded-full border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100"
+            >
+              <AlertCircle className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Save failed — retry</span>
+              <span className="sm:hidden">Retry</span>
+            </button>
+          ) : (
           <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
             {isSaving || isDirty ? (
               <span>Saving…</span>
@@ -1272,6 +1319,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             )}
             <Check className="h-3.5 w-3.5" />
           </div>
+          )}
           <button
             type="button"
             onClick={toggleFullscreen}
@@ -1424,7 +1472,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               {/* Canvas header */}
               <div className="flex shrink-0 flex-col items-center gap-2 border-b border-[#E8E8E3] px-4 py-3 sm:px-6 sm:py-4">
                 <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900 shadow-sm sm:h-12 sm:w-12 sm:text-3xl">
+                  <span data-testid="editor-current-char" className="flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 font-serif text-2xl font-semibold text-neutral-900 shadow-sm sm:h-12 sm:w-12 sm:text-3xl">
                     {character.char}
                   </span>
                   {isCompleted ? (
@@ -1458,9 +1506,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 {/* Creative note removed as requested */}
 
                 {/* Canvas stage */}
-                <div
-                  ref={containerRef}
-                  className="relative m-auto flex min-h-0 w-full min-w-0 items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
+                  <div
+                    ref={containerRef}
+                    data-testid="handwriting-stage"
+                    className="relative m-auto flex min-h-0 w-full min-w-0 items-center justify-center rounded-2xl border border-[#F0F0EC] bg-[#FFFDF7] p-1 sm:p-2 lg:p-4"
                   style={{
                     overflow: "hidden",
                     aspectRatio: "1 / 1",
@@ -1473,9 +1522,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   }}
                 >
                   {isEraser && eraserPos ? (
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none fixed z-30 rounded-full border-2 border-neutral-400 bg-neutral-200/40 backdrop-blur-sm"
+                  <div
+                    aria-hidden="true"
+                    data-testid="eraser-ring"
+                    className="pointer-events-none fixed z-30 rounded-full border-2 border-neutral-400 bg-neutral-200/40 backdrop-blur-sm"
                       style={{
                         left: eraserPos.x - eraserSize / 2,
                         top: eraserPos.y - eraserSize / 2,
@@ -2105,7 +2155,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       ) : null}
 
       {showShortcuts ? (
-        <div className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
+        <div data-testid="editor-shortcuts" className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#E8E8E3] bg-white p-3 shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-900">Shortcuts</span>
             <button type="button" onClick={() => setShowShortcuts(false)} className="text-neutral-400 hover:text-neutral-600">

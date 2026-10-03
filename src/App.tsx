@@ -22,7 +22,6 @@ import { StyleQuizModal } from './components/StyleQuizModal';
 import { LearnView } from './components/LearnView';
 import { StyleExplorerView } from './components/StyleExplorerView';
 import LegalView from './components/LegalView';
-import { AdminView } from './components/AdminView';
 
 export default function App() {
   // User state
@@ -223,10 +222,17 @@ export default function App() {
   // Generation complete handler
   const handleGenerationComplete = (result: {
     ttfBlobUrl: string;
-    otfBlobUrl: string;
     registeredFontFamily: string;
     fileSizeBytes: number;
   }) => {
+    // Release previously generated blob URLs before replacing them so
+    // repeated generations don't leak object URLs for the session.
+    const prev = projects.find((p) => p.id === activeProjectId);
+    if (prev?.ttfBlobUrl) {
+      try {
+        URL.revokeObjectURL(prev.ttfBlobUrl);
+      } catch {}
+    }
     setProjects((prev) =>
       prev.map((proj) => {
         if (proj.id !== activeProjectId) return proj;
@@ -234,7 +240,7 @@ export default function App() {
           ...proj,
           status: 'generated',
           ttfBlobUrl: result.ttfBlobUrl,
-          otfBlobUrl: result.otfBlobUrl,
+          otfBlobUrl: undefined,
           fontFamilyName: result.registeredFontFamily,
           fileSizeBytes: result.fileSizeBytes,
           lastGeneratedAt: 'Just now',
@@ -390,14 +396,6 @@ export default function App() {
                 if (!user) handleStartNewFont();
                 else setCurrentView('workspace');
               }}
-            />
-          )}
-
-          {currentView === 'admin' && user && (
-            <AdminView
-              user={user}
-              projects={projects}
-              onBackToDashboard={() => setCurrentView('dashboard')}
             />
           )}
 

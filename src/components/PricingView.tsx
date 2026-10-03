@@ -125,7 +125,7 @@ export const PricingView: React.FC<PricingViewProps> = ({
               </div>
               <div className="flex items-center gap-2.5">
                 <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>Both TTF and OpenType (.OTF) downloads</span>
+                <span>TrueType (.TTF) font download</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -187,7 +187,7 @@ export const PricingView: React.FC<PricingViewProps> = ({
               Upgrade to TypeMe Pro
             </h3>
             <p className="text-xs text-neutral-500 mt-1 mb-5">
-              Unlock unlimited font projects, OpenType (.OTF) binaries, and natural handwriting alternates.
+              Unlock unlimited font projects, TrueType (.TTF) font binaries, and natural handwriting alternates.
             </p>
 
             <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-200 mb-5 flex items-center justify-between">

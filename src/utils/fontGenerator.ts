@@ -147,9 +147,7 @@ export async function generateFontFromCharacters(
   onProgress?: (progress: GenerationProgress) => void
 ): Promise<{
   ttfBlob: Blob;
-  otfBlob: Blob;
   ttfUrl: string;
-  otfUrl: string;
   registeredFontFamily: string;
   fileSizeBytes: number;
 }> {
@@ -183,7 +181,11 @@ export async function generateFontFromCharacters(
   });
 
   // Step 5: Generating font files
-  onProgress?.({ step: 5, totalSteps: 6, message: 'Generating font binaries (.ttf & .otf)...' });
+  // NOTE: opentype.js emits a TrueType-flavored (glyf-outline) binary, so the
+  // honest output is .ttf only. A previous build relabeled the same bytes as
+  // ".otf" — that was a mislabeled TTF, not OpenType/CFF, so OTF output was
+  // removed rather than shipping a fake format.
+  onProgress?.({ step: 5, totalSteps: 6, message: 'Generating font binary (.ttf)...' });
   await new Promise((r) => setTimeout(r, 220));
 
   const arrayBuffer = font.toArrayBuffer();
@@ -194,9 +196,7 @@ export async function generateFontFromCharacters(
   await new Promise((r) => setTimeout(r, 180));
 
   const ttfBlob = new Blob([arrayBuffer], { type: 'font/ttf' });
-  const otfBlob = new Blob([arrayBuffer], { type: 'font/otf' });
   const ttfUrl = URL.createObjectURL(ttfBlob);
-  const otfUrl = URL.createObjectURL(otfBlob);
 
   const registeredFontFamily = `TypeMe_${cleanFamilyName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
   try {
@@ -209,9 +209,7 @@ export async function generateFontFromCharacters(
 
   return {
     ttfBlob,
-    otfBlob,
     ttfUrl,
-    otfUrl,
     registeredFontFamily,
     fileSizeBytes,
   };

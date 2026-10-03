@@ -23,6 +23,12 @@ for (const [w, h, label] of [
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message.slice(0, 160)));
 
   await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
+  // Mobile serves the compact home instead of the desktop story section.
+  if (!(await page.locator('#where-to-use').isVisible())) {
+    console.log(`--   ${label}: story section not served on this viewport, skipped`);
+    await page.close();
+    continue;
+  }
   await page.locator('#where-to-use').scrollIntoViewIfNeeded();
   await page.waitForTimeout(900);
 

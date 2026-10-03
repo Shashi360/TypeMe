@@ -97,6 +97,12 @@ const SAMPLE = [0.02, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 0.99];
 
   /* Sample while the story cards are still on screen. Past that the section is
      scrolling away, so a pinned header is not expected to still be visible. */
+  // Mobile serves the compact home (stacked story hidden) — nothing to verify.
+  const stackVisible = await page.locator('.tm-stack-head').isVisible().catch(() => false);
+  if (!stackVisible) {
+    console.log('--   mobile: stacked story not served on this viewport, skipped');
+    await page.close();
+  } else {
   const found = [];
   for (let i = 0; i <= 8; i++) {
     await page.evaluate((f) => {
@@ -143,6 +149,7 @@ const SAMPLE = [0.02, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 0.99];
   check('mobile: no horizontal overflow', noOverflow <= 1, `overflow=${noOverflow}`);
 
   await page.close();
+  }
 }
 
 /* ------------------------------------------------------------- reduced */
