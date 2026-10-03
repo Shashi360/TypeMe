@@ -308,7 +308,7 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
 
       {/* Install prompt (only when a real install is available; web always works) */}
       {promptOpen && installable ? (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 p-4 sm:items-center" onClick={() => setPromptOpen(false)}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-neutral-900/40 p-4" onClick={() => setPromptOpen(false)}>
           <div
             className="tm-pop w-full max-w-sm rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}

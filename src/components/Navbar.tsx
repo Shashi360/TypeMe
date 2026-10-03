@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { User, AppView } from '../types';
-import { User as UserIcon, LogOut, Menu, X, FolderOpen, Plus, Shield, BookOpen, Compass, PenTool, HelpCircle, Layers } from 'lucide-react';
+import { User as UserIcon, LogOut, Menu, X, FolderOpen, Plus, Shield, BookOpen, Compass, PenTool, HelpCircle, Layers, Crown } from 'lucide-react';
 
 interface NavbarProps {
   currentView: AppView;
@@ -263,16 +263,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <Plus className="w-3.5 h-3.5 text-neutral-500" />
                     <span>Create New Font</span>
                   </button>
-                  <button
-                    onClick={() => {
-                      setUserDropdownOpen(false);
-                      handleNavClick('pricing');
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-neutral-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    <Shield className="w-3.5 h-3.5 text-neutral-500" />
-                    <span>Upgrade to Pro</span>
-                  </button>
+                  {user.tier === 'free' ? (
+                    <button
+                      onClick={() => {
+                        setUserDropdownOpen(false);
+                        handleNavClick('pricing');
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-neutral-50 flex items-center gap-2 cursor-pointer"
+                    >
+                      <Shield className="w-3.5 h-3.5 text-neutral-500" />
+                      <span>Upgrade to Pro</span>
+                    </button>
+                  ) : (
+                    <div className="w-full px-3 py-2 flex items-center gap-2 text-amber-800 font-semibold">
+                      <Crown className="w-3.5 h-3.5 text-amber-500" fill="currentColor" />
+                      <span>Pro Plan Active</span>
+                    </div>
+                  )}
                   <div className="border-t border-neutral-100 my-1" />
                   <button
                     onClick={() => {

@@ -519,7 +519,7 @@ export default function App() {
       {/* Cannot-delete-last-font notice */}
       {deleteBlocked ? (
         <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 p-4 backdrop-blur-sm sm:items-center"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-neutral-900/40 p-4 backdrop-blur-sm"
           onClick={() => setDeleteBlocked(false)}
           role="dialog"
           aria-modal="true"

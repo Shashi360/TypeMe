@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User } from '../types';
-import { ShieldCheck, ArrowRight, CheckCircle2, X } from 'lucide-react';
+import { ShieldCheck, ArrowRight, CheckCircle2, ChevronDown, X } from 'lucide-react';
 import { normalizeIndianPhone, maskPhone } from '../utils/phone';
 import { OTP_POLICY } from '../utils/otpConfig';
 import { getOtpProvider, isDemoAuthEnabled } from '../utils/otpProvider';
@@ -24,6 +24,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
   // Post login goal selection
   const [creationGoal, setCreationGoal] = useState('My handwriting font');
+  const [ccOpen, setCcOpen] = useState(false);
+
+  const COUNTRY_CODES = [
+    { code: '+91', flag: '🇮🇳', label: 'India' },
+    { code: '+1', flag: '🇺🇸', label: 'USA' },
+    { code: '+44', flag: '🇬🇧', label: 'UK' },
+    { code: '+61', flag: '🇦🇺', label: 'Australia' },
+    { code: '+49', flag: '🇩🇪', label: 'Germany' },
+    { code: '+81', flag: '🇯🇵', label: 'Japan' },
+  ];
+  const activeCountry = COUNTRY_CODES.find((c) => c.code === countryCode) ?? COUNTRY_CODES[0];
 
   // Onboarding story index (0 to 3)
   const [storyIndex, setStoryIndex] = useState(0);
@@ -231,26 +242,62 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-1.5 font-mono">
                   Mobile Number
                 </label>
-                <div className="flex rounded-xl border border-neutral-300 shadow-2xs focus-within:border-neutral-900 focus-within:ring-1 focus-within:ring-neutral-900 transition-all overflow-hidden bg-white">
-                  <select
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                    className="bg-neutral-50 px-3 py-3 text-xs font-medium text-neutral-800 border-r border-neutral-300 focus:outline-none"
-                  >
-                    <option value="+91">🇮🇳 +91</option>
-                    <option value="+1">🇺🇸 +1</option>
-                    <option value="+44">🇬🇧 +44</option>
-                    <option value="+61">🇦🇺 +61</option>
-                    <option value="+49">🇩🇪 +49</option>
-                    <option value="+81">🇯🇵 +81</option>
-                  </select>
+                <div className="flex rounded-xl border border-neutral-300 shadow-2xs focus-within:border-neutral-900 focus-within:ring-1 focus-within:ring-neutral-900 transition-all bg-white">
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setCcOpen((v) => !v)}
+                      aria-label="Select country code"
+                      aria-expanded={ccOpen}
+                      className="flex h-full items-center gap-1 rounded-l-xl bg-neutral-900 px-3 py-3 text-xs font-semibold text-white transition-colors hover:bg-neutral-800"
+                    >
+                      <span aria-hidden="true">{activeCountry.flag}</span>
+                      <span className="font-mono">{activeCountry.code}</span>
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${ccOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {ccOpen ? (
+                      <>
+                        <div
+                          className="fixed inset-0 z-[60]"
+                          onClick={() => setCcOpen(false)}
+                          aria-hidden="true"
+                        />
+                        <div
+                          role="listbox"
+                          aria-label="Country codes"
+                          className="absolute left-0 top-full z-[61] mt-1 max-h-56 w-48 overflow-y-auto rounded-xl border border-neutral-200 bg-white py-1 shadow-xl"
+                        >
+                          {COUNTRY_CODES.map((c) => (
+                            <button
+                              key={c.code}
+                              type="button"
+                              role="option"
+                              aria-selected={c.code === countryCode}
+                              onClick={() => {
+                                setCountryCode(c.code);
+                                setCcOpen(false);
+                              }}
+                              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-neutral-50 ${
+                                c.code === countryCode ? 'font-semibold text-neutral-900' : 'text-neutral-700'
+                              }`}
+                            >
+                              <span aria-hidden="true">{c.flag}</span>
+                              <span className="flex-1">{c.label}</span>
+                              <span className="font-mono text-neutral-500">{c.code}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
                   <input
                     type="tel"
                     placeholder="7760593180"
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     required
-                    className="flex-1 px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none font-mono"
+                    aria-label="Mobile number"
+                    className="min-w-0 flex-1 rounded-r-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none font-mono"
                     autoFocus
                   />
                 </div>

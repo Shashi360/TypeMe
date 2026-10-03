@@ -1357,7 +1357,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           {ent.isPro ? (
             <div className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 shadow-sm">
               <Crown className="h-3.5 w-3.5" fill="currentColor" />
-              <span>Pro ✓</span>
+              <span>Pro Plan Active</span>
             </div>
           ) : (
             <button
@@ -2096,7 +2096,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                     </span>
                     <ChevronRight className="h-4 w-4 text-amber-700" />
                   </button>
-                ) : null}
+                ) : (
+                  <div className="inline-flex min-h-[44px] items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-900">
+                    <span className="inline-flex items-center gap-2">
+                      <Crown className="h-4 w-4" fill="currentColor" /> Plan: Pro Plan Active
+                    </span>
+                  </div>
+                )}
                 {hasPrevious && onPrevious ? (
                   <button
                     type="button"

@@ -344,7 +344,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* Delete confirmation */}
       {pendingDelete ? (
         <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-neutral-900/40 p-4 backdrop-blur-sm sm:items-center"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-neutral-900/40 p-4 backdrop-blur-sm"
           onClick={() => setPendingDelete(null)}
           role="dialog"
           aria-modal="true"
