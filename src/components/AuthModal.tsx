@@ -17,7 +17,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [step, setStep] = useState<'phone' | 'otp' | 'post_login' | 'onboarding_story'>('phone');
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('7760593180');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState<string[]>(Array(OTP_POLICY.length).fill(''));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(30);
@@ -107,16 +107,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
     // Support paste of complete code
     if (value.length > 1) {
-      const pasted = value.replace(/\D/g, '').slice(0, 6);
+      const pasted = value.replace(/\D/g, '').slice(0, OTP_POLICY.length);
       if (pasted.length > 0) {
         const newOtp = [...otp];
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < OTP_POLICY.length; i++) {
           newOtp[i] = pasted[i] || '';
         }
         setOtp(newOtp);
-        const nextFocus = Math.min(pasted.length, 5);
+        const nextFocus = Math.min(pasted.length, OTP_POLICY.length - 1);
         otpInputsRef.current[nextFocus]?.focus();
-        if (pasted.length === 6) {
+        if (pasted.length === OTP_POLICY.length) {
           verifyOtpCode(newOtp.join(''));
         }
       }
@@ -129,7 +129,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     setOtp(newOtp);
 
     // Auto advance focus
-    if (cleanChar && index < 5) {
+    if (cleanChar && index < OTP_POLICY.length - 1) {
       otpInputsRef.current[index + 1]?.focus();
     }
 

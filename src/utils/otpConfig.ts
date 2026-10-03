@@ -4,8 +4,8 @@
  * server-side — client checks alone never constitute rate limiting.
  */
 export const OTP_POLICY = {
-  /** OTP length in digits. */
-  length: 6,
+  /** OTP length in digits (4 for the current test build). */
+  length: 4,
   /** OTP validity window (also the message shown to users). */
   expirySeconds: 5 * 60,
   /** Resend cooldown after each request. */

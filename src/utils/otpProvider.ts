@@ -58,22 +58,30 @@ class DevOtpProvider implements OtpProvider {
   private records = new Map<string, DemoRecord>();
   private lastCodeForTestPhone = new Map<string, string>();
 
-  /** Fixed dev credential for the documented test number (dev only). */
-  static readonly DEV_PHONE_E164 = "+917760593180";
-  static readonly DEV_OTP = "007347";
+  /**
+   * Fixed test credentials for the documented test numbers (dev only).
+   * Production codes are always random and never observable.
+   */
+  static readonly TEST_CREDENTIALS: Record<string, string> = {
+    "+917760593180": "7760",
+    "+917760593181": "7761",
+    "+917760593182": "7762",
+  };
 
   private newCode(phone: string): string {
-    if (phone === DevOtpProvider.DEV_PHONE_E164) return DevOtpProvider.DEV_OTP;
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const fixed = DevOtpProvider.TEST_CREDENTIALS[phone];
+    if (fixed) return fixed;
+    const min = 10 ** (OTP_POLICY.length - 1);
+    const code = String(Math.floor(min + Math.random() * 9 * min));
     this.lastCodeForTestPhone.set(phone, code);
     return code;
   }
 
   /** Test hook: read the last issued dev code (never rendered in UI). */
   debugLastCode(phone: string): string | undefined {
-    return phone === DevOtpProvider.DEV_PHONE_E164
-      ? DevOtpProvider.DEV_OTP
-      : this.lastCodeForTestPhone.get(phone);
+    return (
+      DevOtpProvider.TEST_CREDENTIALS[phone] ?? this.lastCodeForTestPhone.get(phone)
+    );
   }
 
   async requestOtp(e164Phone: string): Promise<OtpRequestResult> {
