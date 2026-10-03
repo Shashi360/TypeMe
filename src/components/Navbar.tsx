@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { User, AppView } from '../types';
 import { User as UserIcon, LogOut, Menu, X, FolderOpen, Plus, Shield, BookOpen, Compass, PenTool, HelpCircle, Layers, Crown } from 'lucide-react';
 
@@ -26,6 +26,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   // The drawer stays mounted for the 300ms slide-out, then unmounts so the
   // off-canvas element can never expand the page's scrollable area.
   const [drawerMounted, setDrawerMounted] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Dismiss the account dropdown on outside click.
+  useEffect(() => {
+    if (!userDropdownOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [userDropdownOpen]);
 
   useEffect(() => {
     if (mobileMenuOpen) {
@@ -217,13 +230,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             </>
           ) : (
-            <div className="relative">
+            <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                aria-label="Account menu"
+                aria-expanded={userDropdownOpen}
                 className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-neutral-100 transition-colors text-left cursor-pointer border border-neutral-200/80"
               >
-                <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center text-xs font-mono font-bold">
-                  {user.phone ? user.phone.slice(-2) : 'ME'}
+                <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center text-[10px] font-mono font-bold">
+                  {user.phone?.match(/^\+\d+/)?.[0] ?? (user.phone ? user.phone.slice(-2) : 'ME')}
                 </div>
                 <div className="hidden sm:block text-xs pr-1">
                   <span className="font-semibold text-neutral-900 block leading-tight">
