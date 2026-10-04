@@ -185,18 +185,22 @@ begin
 end;
 $$;
 
+drop trigger if exists set_projects_updated_at on public.projects;
 create trigger set_projects_updated_at
   before update on public.projects
   for each row execute function public.handle_updated_at();
 
+drop trigger if exists set_glyphs_updated_at on public.glyphs;
 create trigger set_glyphs_updated_at
   before update on public.glyphs
   for each row execute function public.handle_updated_at();
 
+drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
   before update on public.profiles
   for each row execute function public.handle_updated_at();
 
+drop trigger if exists set_subscriptions_updated_at on public.subscriptions;
 create trigger set_subscriptions_updated_at
   before update on public.subscriptions
   for each row execute function public.handle_updated_at();
@@ -219,6 +223,7 @@ begin
 end;
 $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_auth_user();
@@ -238,20 +243,24 @@ alter table public.subscriptions enable row level security;
 alter table public.payments enable row level security;
 alter table public.user_settings enable row level security;
 
+drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own"
   on public.profiles for select
   using (id = auth.uid());
 
+drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own"
   on public.profiles for update
   using (id = auth.uid())
   with check (id = auth.uid());
 
+drop policy if exists "projects_all_own" on public.projects;
 create policy "projects_all_own"
   on public.projects for all
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
+drop policy if exists "glyphs_select_own" on public.glyphs;
 create policy "glyphs_select_own"
   on public.glyphs for select
   using (
@@ -262,6 +271,7 @@ create policy "glyphs_select_own"
     )
   );
 
+drop policy if exists "glyphs_insert_own" on public.glyphs;
 create policy "glyphs_insert_own"
   on public.glyphs for insert
   with check (
@@ -272,6 +282,7 @@ create policy "glyphs_insert_own"
     )
   );
 
+drop policy if exists "glyphs_update_own" on public.glyphs;
 create policy "glyphs_update_own"
   on public.glyphs for update
   using (
@@ -289,6 +300,7 @@ create policy "glyphs_update_own"
     )
   );
 
+drop policy if exists "glyphs_delete_own" on public.glyphs;
 create policy "glyphs_delete_own"
   on public.glyphs for delete
   using (
@@ -299,6 +311,7 @@ create policy "glyphs_delete_own"
     )
   );
 
+drop policy if exists "generated_fonts_select_own" on public.generated_fonts;
 create policy "generated_fonts_select_own"
   on public.generated_fonts for select
   using (
@@ -313,6 +326,7 @@ create policy "generated_fonts_select_own"
 -- owned — double condition). Rows grant no entitlement (nothing reads this
 -- table for access control); downloads derive from project ownership.
 -- generation_jobs writes stay backend-only (service role).
+drop policy if exists "generated_fonts_insert_own" on public.generated_fonts;
 create policy "generated_fonts_insert_own"
   on public.generated_fonts for insert
   to authenticated
@@ -324,6 +338,7 @@ create policy "generated_fonts_insert_own"
     )
   );
 
+drop policy if exists "generation_jobs_select_own" on public.generation_jobs;
 create policy "generation_jobs_select_own"
   on public.generation_jobs for select
   using (
@@ -339,15 +354,18 @@ create policy "generation_jobs_select_own"
 -- Exception: users may record their OWN checkout intent while status stays
 -- 'pending' — activation remains backend-only and the entitlement RPC
 -- honors active rows exclusively.
+drop policy if exists "subscriptions_select_own" on public.subscriptions;
 create policy "subscriptions_select_own"
   on public.subscriptions for select
   using (user_id = auth.uid());
 
+drop policy if exists "subscriptions_insert_own_pending" on public.subscriptions;
 create policy "subscriptions_insert_own_pending"
   on public.subscriptions for insert
   to authenticated
   with check (user_id = auth.uid() and status = 'pending');
 
+drop policy if exists "subscriptions_update_own_pending" on public.subscriptions;
 create policy "subscriptions_update_own_pending"
   on public.subscriptions for update
   to authenticated
@@ -356,10 +374,12 @@ create policy "subscriptions_update_own_pending"
 
 -- Payments: read-own history only. Verification + status writes are
 -- backend-only; users may only record non-verified intents.
+drop policy if exists "payments_select_own" on public.payments;
 create policy "payments_select_own"
   on public.payments for select
   using (user_id = auth.uid());
 
+drop policy if exists "payments_insert_own_initiated" on public.payments;
 create policy "payments_insert_own_initiated"
   on public.payments for insert
   to authenticated
@@ -375,6 +395,7 @@ create policy "payments_insert_own_initiated"
 --    status 'active', started_at/expires_at (+30d), razorpay ids stored.
 -- 4. App reconciles on next load via get_my_entitlement() (already wired).
 
+drop policy if exists "user_settings_all_own" on public.user_settings;
 create policy "user_settings_all_own"
   on public.user_settings for all
   using (user_id = auth.uid())
@@ -445,6 +466,7 @@ insert into storage.buckets (id, name, public)
 values ('fonts', 'fonts', false)
 on conflict (id) do nothing;
 
+drop policy if exists "fonts_insert_own" on storage.objects;
 create policy "fonts_insert_own"
   on storage.objects for insert
   to authenticated
@@ -453,6 +475,7 @@ create policy "fonts_insert_own"
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
+drop policy if exists "fonts_select_own" on storage.objects;
 create policy "fonts_select_own"
   on storage.objects for select
   to authenticated
@@ -461,6 +484,7 @@ create policy "fonts_select_own"
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
+drop policy if exists "fonts_delete_own" on storage.objects;
 create policy "fonts_delete_own"
   on storage.objects for delete
   to authenticated
