@@ -34,8 +34,10 @@ import {
   syncProfilePhone,
   createPendingSubscription,
   readMyEntitlement,
+  recordGeneratedFont,
 } from './utils/db';
 import { ensureSupabaseSession } from './utils/supabaseSession';
+import { getSupabase } from './utils/supabaseClient';
 import { toE164Loose } from './utils/phone';
 
 export default function App() {
@@ -111,6 +113,40 @@ export default function App() {
   // load was still in flight) — in that case we refetch and apply fresh.
   const serverMut = useRef(0);
 
+  // ---- Identity isolation ---------------------------------------------
+  // Demo-auth reality: Supabase anon sessions are per-browser, while login
+  // identities (phones) are per-human. The session remembers which login
+  // claimed it first (owner key). A DIFFERENT login on the same browser
+  // session never reads that account's server data: it runs local-only
+  // under a phone-scoped cache key. Same login returns to full server mode.
+  // With production phone-auth (one auth.user per phone) the owner always
+  // matches and this degrades to a harmless extra check.
+  const SESSION_OWNER_PREFIX = 'typeme_session_owner_';
+  const GUEST_PROJECTS_KEY = 'typeme_projects';
+  const scopedLocalKey = (e164: string | null) =>
+    e164 ? `typeme_projects_local_${e164.replace(/\D/g, '')}` : GUEST_PROJECTS_KEY;
+  const scopedUserKey = (e164: string | null) =>
+    e164 ? `typeme_user_${e164.replace(/\D/g, '')}` : null;
+  // Current local cache key. Server mode ignores it (Supabase authoritative).
+  const localKeyRef = useRef<string>(GUEST_PROJECTS_KEY);
+  const projectsRef = useRef<FontProject[]>(projects);
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+
+  const readLocalList = (key: string): FontProject[] => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+      return Array.isArray(parsed) ? (parsed as FontProject[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const DEV_APP =
+    typeof import.meta !== 'undefined' &&
+    (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
+
   const enterServerMode = async (baseLocal: FontProject[], phoneRaw?: string | null) => {
     const run = ++serverRun.current;
     setServerLoading(true);
@@ -122,13 +158,48 @@ export default function App() {
     try {
       const uid = await ensureSupabaseSession();
       if (run !== serverRun.current) return;
+      const e164 = phoneRaw ? toE164Loose(phoneRaw) : null;
+      // Session ownership gate: a login identity that did not establish
+      // this browser session must never see its server account. Run
+      // local-only under a phone-scoped cache instead of migrating into it.
+      let owner: string | null = null;
+      try {
+        owner = localStorage.getItem(`${SESSION_OWNER_PREFIX}${uid}`);
+      } catch {
+        owner = null;
+      }
+      if (e164 && owner && owner !== e164) {
+        if (DEV_APP) {
+          console.info(
+            `[typeme] session owned by another login; local-only mode (no server read/migrate)`
+          );
+        }
+        setServerUidSync(null);
+        localKeyRef.current = scopedLocalKey(e164);
+        const scoped = readLocalList(localKeyRef.current);
+        setProjects(scoped);
+        setActiveProjectId(scoped[0]?.id || '');
+        return;
+      }
       setServerUidSync(uid);
+      localKeyRef.current = GUEST_PROJECTS_KEY;
+      if (e164 && !owner) {
+        try {
+          localStorage.setItem(`${SESSION_OWNER_PREFIX}${uid}`, e164);
+        } catch {
+          // ignore
+        }
+      }
       // Tie the login phone to this profile (production identity join:
       // profiles.phone <-> projects/subscriptions via user_id).
-      const e164 = phoneRaw ? toE164Loose(phoneRaw) : null;
       if (e164) syncProfilePhone(e164).catch(() => {});
-      // Backend truth wins: a server-activated Pro (Razorpay webhook) is
-      // adopted locally. A local demo Pro is kept when the server is free.
+      if (DEV_APP) {
+        console.info(`[typeme] server mode uid=${uid}`);
+      }
+      // Backend truth wins both ways: a server-activated Pro is adopted;
+      // a server-EXPIRED subscription forces Free even when the local
+      // cache still says Pro. A merely pending/absent server row leaves
+      // the local demo state untouched.
       readMyEntitlement()
         .then((ent) => {
           const e = ent as {
@@ -138,7 +209,8 @@ export default function App() {
             startedAt?: number | null;
             expiresAt?: number | null;
           } | null;
-          if (run === serverRun.current && e?.isPro && e?.isActive) {
+          if (run !== serverRun.current || !e) return;
+          if (e.isPro && e.isActive) {
             setUser((prev) =>
               prev
                 ? {
@@ -153,27 +225,43 @@ export default function App() {
                   }
                 : prev
             );
+          } else if (e.expiresAt && !e.isActive) {
+            setUser((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    tier: 'free',
+                    subscription: {
+                      plan: 'pro',
+                      status: 'expired',
+                      startedAt: e.startedAt ?? Date.now(),
+                      expiresAt: e.expiresAt ?? Date.now(),
+                    },
+                  }
+                : prev
+            );
           }
         })
         .catch(() => {});
-      // Re-read the local cache: projects created while the session was
-      // being established are in localStorage but not in the login-time
-      // snapshot. Union by id so nothing created mid-flight is skipped.
+      // Re-read the local caches: projects created while the session was
+      // being established, plus this login's phone-scoped local work, are
+      // not in the login-time snapshot. Union by id; the claim registry
+      // inside migrateLocalProjectsToSupabase still blocks cross-account
+      // claims and local data is never deleted.
       let base = baseLocal;
       try {
-        const stored = JSON.parse(
-          localStorage.getItem('typeme_projects') || '[]'
-        ) as FontProject[];
-        if (Array.isArray(stored) && stored.length) {
-          const seen = new Set(base.map((p) => p?.id));
+        const seen = new Set(base.map((p) => p?.id));
+        for (const key of [GUEST_PROJECTS_KEY, scopedLocalKey(e164)]) {
+          const stored = readLocalList(key);
           const extra = stored.filter((p) => p && !seen.has(p.id));
+          for (const p of extra) seen.add(p.id);
           if (extra.length) base = [...base, ...extra];
         }
       } catch {
         // ignore — fall back to the login-time snapshot
       }
       const v0 = serverMut.current;
-      await migrateLocalProjectsToSupabase(baseLocal).catch(() => {});
+      await migrateLocalProjectsToSupabase(base).catch(() => {});
       if (run !== serverRun.current) return;
       let server = await loadMyProjects();
       if (run !== serverRun.current) return;
@@ -207,6 +295,44 @@ export default function App() {
     if (!user || serverRestored.current) return;
     serverRestored.current = true;
     void enterServerMode(projects, user.phone).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Supabase auth lifecycle: SIGNED_IN (e.g. session established elsewhere)
+  // re-enters server mode when logged in but sourceless; SIGNED_OUT drops
+  // server state and restores this identity's local cache. Supabase data is
+  // never deleted here — only local session/cache state.
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb) return;
+    const {
+      data: { subscription },
+    } = sb.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        if (!serverUidRef.current) return;
+        serverRun.current += 1;
+        setServerUidSync(null);
+        setServerLoading(false);
+        establishingRef.current = false;
+        try {
+          const local = readLocalList(localKeyRef.current);
+          if (local.length) {
+            setProjects(local);
+            setActiveProjectId(local[0]?.id || '');
+          }
+        } catch {
+          // ignore
+        }
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (user && !serverUidRef.current && !establishingRef.current) {
+          serverRestored.current = true;
+          void enterServerMode(projectsRef.current, user.phone).catch(() => {});
+        }
+      }
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -308,11 +434,15 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Sync state to localStorage
+  // Sync state to localStorage. The global key holds the CURRENT session
+  // user; a per-phone snapshot preserves each login's subscription/tier so
+  // another number logging in later can neither read nor clobber it.
   useEffect(() => {
     try {
       if (user) {
         localStorage.setItem('typeme_user', JSON.stringify(user));
+        const key = scopedUserKey(user.phone ? toE164Loose(user.phone) : null);
+        if (key) localStorage.setItem(key, JSON.stringify(user));
       } else {
         localStorage.removeItem('typeme_user');
       }
@@ -322,11 +452,13 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    // Server mode: Supabase is authoritative; never overwrite the local
-    // guest cache with server rows (it stays intact for offline/guest use).
+    // Server mode: Supabase is authoritative; never overwrite any local
+    // cache with server rows. Otherwise persist to the CURRENT cache key:
+    // the shared guest key, or the login's phone-scoped key after an
+    // ownership mismatch — never another account's data.
     if (serverUid) return;
     try {
-      localStorage.setItem('typeme_projects', JSON.stringify(projects));
+      localStorage.setItem(localKeyRef.current, JSON.stringify(projects));
     } catch {
       // ignore
     }
@@ -337,12 +469,43 @@ export default function App() {
 
   // Auth handler
   const handleAuthSuccess = (authenticatedUser: User, isNewUser: boolean) => {
-    setUser(authenticatedUser);
+    // Same-phone re-login must not reset a live local subscription: carry
+    // the still-active sub/tier (and counters) from THIS phone's own
+    // snapshot. A different phone starts clean — snapshots are per-phone
+    // so one number can never inherit another's plan.
+    let nextUser = authenticatedUser;
+    try {
+      const nextE164 = authenticatedUser.phone
+        ? toE164Loose(authenticatedUser.phone)
+        : null;
+      const key = scopedUserKey(nextE164);
+      const prev = key
+        ? (JSON.parse(localStorage.getItem(key) || 'null') as User | null)
+        : null;
+      const sub = prev?.subscription;
+      if (
+        prev &&
+        (prev.tier === 'pro' || prev.tier === 'creator') &&
+        sub?.status === 'active' &&
+        sub.expiresAt > Date.now()
+      ) {
+        nextUser = {
+          ...authenticatedUser,
+          tier: prev.tier,
+          subscription: sub,
+          fontsCreatedCount: prev.fontsCreatedCount,
+          totalDownloads: prev.totalDownloads,
+        };
+      }
+    } catch {
+      // ignore — fall back to the fresh login object
+    }
+    setUser(nextUser);
     // Server becomes authoritative: migrate local work into this account,
     // then replace the dashboard source with the verified server response.
     // Runs in the background; local cache stays visible meanwhile.
     serverRestored.current = true;
-    void enterServerMode(projects, authenticatedUser.phone).catch(() => {});
+    void enterServerMode(projects, nextUser.phone).catch(() => {});
     if (isNewUser) {
       setOnboardingModalOpen(true);
     } else {
@@ -352,21 +515,23 @@ export default function App() {
 
   const handleLogout = () => {
     // Drop server state first so nothing from this account can leak into
-    // the next session; local guest cache is restored untouched.
+    // the next session. The Supabase session itself stays (sticky anon
+    // identity per browser); the ownership gate at next login decides
+    // server vs local-only mode. Restore this identity's own local cache.
     serverRun.current += 1;
     setServerUidSync(null);
     setServerLoading(false);
     establishingRef.current = false;
     try {
-      const saved = localStorage.getItem('typeme_projects');
-      if (saved) {
-        const local = JSON.parse(saved) as FontProject[];
+      const local = readLocalList(localKeyRef.current);
+      if (local.length) {
         setProjects(local);
         setActiveProjectId(local[0]?.id || '');
       }
     } catch {
       // ignore — keep in-memory state
     }
+    localKeyRef.current = GUEST_PROJECTS_KEY;
     setUser(null);
     setCurrentView('landing');
   };
@@ -649,6 +814,13 @@ export default function App() {
         };
       })
     );
+    // Associate the artifact server-side (user_id + project_id ownership).
+    // Best-effort: local blobs stay authoritative for the demo session.
+    if (serverUidRef.current) {
+      const pid = activeIdRef.current;
+      recordGeneratedFont(pid, result.registeredFontFamily, 'otf').catch(() => {});
+      updateServerProject(pid, { status: 'generated' }).catch(() => {});
+    }
 
     setGenerationModalOpen(false);
     setCurrentView('download');

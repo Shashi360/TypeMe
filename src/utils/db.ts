@@ -122,6 +122,23 @@ export const readMyEntitlement = async (): Promise<unknown> => {
 };
 
 const MIGRATION_FLAG_PREFIX = "typeme_migrated_";
+// Global claim registry: local project id -> uid that already claimed it.
+// Prevents one browser login from ever migrating another login's leftovers
+// into its own account (ids stay claimable only by their first claimant).
+const CLAIM_KEY = "typeme_claimed_local";
+
+const readClaimed = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(CLAIM_KEY) || "{}") as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
+
+const DEV_LOG =
+  typeof import.meta !== "undefined" &&
+  (import.meta as unknown as { env?: Record<string, string | boolean | undefined> })
+    .env?.DEV === true;
 
 export interface LocalProjectLike {
   id: string;
@@ -169,8 +186,13 @@ export const migrateLocalProjectsToSupabase = async (
 
   let migrated = 0;
   let mapDirty = false;
+  const claimed = readClaimed();
+  let claimedDirty = false;
   for (const lp of localProjects) {
     if (idMap[lp.id]) continue;
+    // Another login identity already claimed this local project: never
+    // migrate one account's leftovers into a different account.
+    if (claimed[lp.id] && claimed[lp.id] !== uid) continue;
     const { data, error } = await sb
       .from("projects")
       .insert({
@@ -208,6 +230,8 @@ export const migrateLocalProjectsToSupabase = async (
     }
     idMap[lp.id] = row.id;
     mapDirty = true;
+    claimed[lp.id] = uid;
+    claimedDirty = true;
     migrated += 1;
   }
 
@@ -216,6 +240,13 @@ export const migrateLocalProjectsToSupabase = async (
   if (mapDirty) {
     try {
       localStorage.setItem(mapKey, JSON.stringify(idMap));
+    } catch {
+      // ignore
+    }
+  }
+  if (claimedDirty) {
+    try {
+      localStorage.setItem(CLAIM_KEY, JSON.stringify(claimed));
     } catch {
       // ignore
     }
@@ -229,6 +260,11 @@ export const migrateLocalProjectsToSupabase = async (
     } catch {
       // ignore
     }
+  }
+  if (DEV_LOG) {
+    console.info(
+      `[typeme] migrate uid=${uid} migrated=${migrated} serverProjects=${serverIds.size}`,
+    );
   }
   return migrated;
 };
@@ -344,6 +380,12 @@ export const loadMyProjects = async (): Promise<FontProject[]> => {
   for (const row of rows) {
     const glyphs = (await listGlyphs(row.id)) as DbGlyphRow[];
     out.push(normalizeServerProject(row, glyphs));
+  }
+  if (DEV_LOG) {
+    const owners = [...new Set(rows.map((r) => r.user_id))];
+    console.info(
+      `[typeme] loadMyProjects projects=${rows.length} owners=${owners.length}`,
+    );
   }
   return out;
 };
@@ -473,4 +515,50 @@ export const readMySubscription = async (): Promise<DbSubscription | null> => {
   if (error) throw error;
   const rows = (data ?? []) as DbSubscription[];
   return rows[0] ?? null;
+};
+
+export interface DbGeneratedFont {
+  id: string;
+  project_id: string;
+  user_id: string;
+  font_name: string;
+  format: string;
+  status: string;
+  created_at: string;
+}
+
+/**
+ * Associate a generated font with its project + auth.uid(). Callers
+ * fire-and-forget after local generation; a throw means the row is absent
+ * (policy or offline) and local artifacts stay authoritative for the demo.
+ */
+export const recordGeneratedFont = async (
+  projectId: string,
+  fontName: string,
+  format: "otf" | "ttf",
+): Promise<void> => {
+  const sb = getSupabase();
+  if (!sb) throw new Error(NOT_CONFIGURED);
+  const uid = await sessionUid();
+  const { error } = await sb.from("generated_fonts").insert({
+    project_id: projectId,
+    user_id: uid,
+    font_name: fontName,
+    format,
+    status: "ready",
+  });
+  if (error) throw error;
+};
+
+/** "My Fonts" server source: current user's generated fonts only (RLS). */
+export const listMyGeneratedFonts = async (): Promise<DbGeneratedFont[]> => {
+  const sb = getSupabase();
+  if (!sb) throw new Error(NOT_CONFIGURED);
+  await sessionUid();
+  const { data, error } = await sb
+    .from("generated_fonts")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as DbGeneratedFont[];
 };

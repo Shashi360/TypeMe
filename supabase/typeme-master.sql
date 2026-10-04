@@ -309,8 +309,20 @@ create policy "generated_fonts_select_own"
     )
   );
 
--- generated_fonts / generation_jobs writes belong to the trusted backend
--- (service role). No insert/update/delete policy for browser clients.
+-- generated_fonts: users record their OWN artifacts (project must also be
+-- owned — double condition). Rows grant no entitlement (nothing reads this
+-- table for access control); downloads derive from project ownership.
+-- generation_jobs writes stay backend-only (service role).
+create policy "generated_fonts_insert_own"
+  on public.generated_fonts for insert
+  to authenticated
+  with check (
+    user_id = auth.uid()
+    and exists (
+      select 1 from public.projects p
+      where p.id = generated_fonts.project_id and p.user_id = auth.uid()
+    )
+  );
 
 create policy "generation_jobs_select_own"
   on public.generation_jobs for select
