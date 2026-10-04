@@ -35,6 +35,13 @@ export interface OtpProvider {
    * verifyOtp, and callers MUST require auth.getUser() there.
    */
   readonly establishesSession?: boolean;
+  /**
+   * Simulated-only auto-fill: returns the currently pending code for this
+   * phone so the UI can populate it (Zyloom-style). Absent on every real
+   * path (native SMS, bridge) — the user types what they received. Never
+   * logged; passed internally provider -> UI only.
+   */
+  autoFillCode?(e164Phone: string): string | null;
   requestOtp(e164Phone: string): Promise<OtpRequestResult>;
   verifyOtp(e164Phone: string, otp: string): Promise<OtpVerifyResult>;
 }
@@ -236,6 +243,11 @@ class DevOtpProvider implements OtpProvider {
     return (
       DevOtpProvider.TEST_CREDENTIALS[phone] ?? this.lastCodeForTestPhone.get(phone)
     );
+  }
+
+  /** Simulated auto-fill source: the pending in-memory code, if any. */
+  autoFillCode(e164Phone: string): string | null {
+    return this.records.get(e164Phone)?.code ?? null;
   }
 
   async requestOtp(e164Phone: string): Promise<OtpRequestResult> {

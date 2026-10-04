@@ -5,6 +5,7 @@ import { normalizeIndianPhone, maskPhone } from '../utils/phone';
 import { OTP_POLICY } from '../utils/otpConfig';
 import { getOtpProvider, isDemoAuthEnabled, isTestBridgeRoute, isLocalSimulated } from '../utils/otpProvider';
 import { getSupabase } from '../utils/supabaseClient';
+import { stableAccountIdFor } from '../utils/identity';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -46,6 +47,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [verifiedUid, setVerifiedUid] = useState<string | null>(null);
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  // Pending auto-verify after OTP auto-fill (cleared on manual edit).
+  const autoVerifyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoFilled, setAutoFilled] = useState(false);
+  useEffect(() => () => {
+    if (autoVerifyTimer.current) clearTimeout(autoVerifyTimer.current);
+  }, []);
 
   // Resend countdown
   useEffect(() => {
@@ -99,7 +106,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       setStep('otp');
       setCountdown(OTP_POLICY.resendCooldownSeconds);
       setOtp(Array(OTP_POLICY.length).fill(''));
-      setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
+      // Simulated routes auto-populate the generated code (Zyloom-style);
+      // real routes leave the boxes empty for what the user received.
+      // Manual typing/paste/delete still works and cancels auto-verify.
+      const auto = provider.autoFillCode?.(normalized.e164) ?? null;
+      if (auto && auto.length === OTP_POLICY.length) {
+        setAutoFilled(true);
+        setOtp(auto.split(''));
+        setIsSubmitting(true);
+        // Brief beat so "Verifying..." is perceptible, then verify the
+        // auto-inserted code through the same layer as manual entry.
+        // Manual edits cancel this (see handleOtpChange); no separate
+        // timer bookkeeping beyond the shared ref.
+        autoVerifyTimer.current = setTimeout(() => {
+          autoVerifyTimer.current = null;
+          verifyOtpCode(auto, normalized.e164).catch(() => {});
+        }, 700);
+      } else {
+        setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
+      }
     } catch {
       setErrorMessage("Couldn't send the code. Please try again.");
     } finally {
@@ -109,6 +134,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
   const handleOtpChange = (index: number, value: string) => {
     setErrorMessage(null);
+    // Any manual edit cancels a pending auto-verify; the user owns the digits.
+    if (autoVerifyTimer.current) {
+      clearTimeout(autoVerifyTimer.current);
+      autoVerifyTimer.current = null;
+    }
+    setAutoFilled(false);
 
     // Support paste of complete code
     if (value.length > 1) {
@@ -138,7 +169,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       otpInputsRef.current[index + 1]?.focus();
     }
 
-    // Auto verify when 6 digits are complete
+    // Auto verify when all digits are complete
     if (newOtp.every((digit) => digit !== '')) {
       verifyOtpCode(newOtp.join(''));
     }
@@ -150,20 +181,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     }
   };
 
-  const verifyOtpCode = async (enteredOtp: string) => {
+  const verifyOtpCode = async (enteredOtp: string, phoneOverride?: string) => {
+    // phoneOverride exists because timer callbacks capture the render
+    // BEFORE setE164Phone lands — reading e164Phone state there yields the
+    // previous (empty) value and fails verification. Callers firing later
+    // (typing, buttons) can rely on state.
+    const phone = phoneOverride ?? e164Phone;
     if (enteredOtp.length !== OTP_POLICY.length) {
       setErrorMessage("That's not the right code. Try again.");
       return;
     }
     const provider = getOtpProvider();
-    if (!provider || !e164Phone) {
+    if (!provider || !phone) {
       setErrorMessage("Couldn't verify the code. Please try again.");
       return;
     }
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      const res = await provider.verifyOtp(e164Phone, enteredOtp);
+      const res = await provider.verifyOtp(phone, enteredOtp);
       if (!res.ok) {
         setErrorMessage(res.message);
         return;
@@ -195,7 +231,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const handleResend = async () => {
     const provider = getOtpProvider();
     if (!provider || !e164Phone) return;
+    if (autoVerifyTimer.current) {
+      clearTimeout(autoVerifyTimer.current);
+      autoVerifyTimer.current = null;
+    }
     setErrorMessage(null);
+    setAutoFilled(false);
     const res = await provider.requestOtp(e164Phone);
     if (!res.ok) {
       setErrorMessage(res.message);
@@ -203,7 +244,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     }
     setCountdown(OTP_POLICY.resendCooldownSeconds);
     setOtp(Array(OTP_POLICY.length).fill(''));
-    setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
+    const auto = provider.autoFillCode?.(e164Phone) ?? null;
+    if (auto && auto.length === OTP_POLICY.length) {
+      setAutoFilled(true);
+      setOtp(auto.split(''));
+      setIsSubmitting(true);
+      autoVerifyTimer.current = setTimeout(() => {
+        autoVerifyTimer.current = null;
+        verifyOtpCode(auto, e164Phone).catch(() => {});
+      }, 700);
+    } else {
+      setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
+    }
   };
 
   const finalizeLogin = async () => {
@@ -222,16 +274,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     }
     // Display name is best-effort from the user's own profile row; the
     // session stays the sole authority and no privilege is fabricated.
+    // Skipped when no verified session exists (legacy simulator path).
     let displayName = 'You';
-    try {
-      const sb = getSupabase();
-      const { data } = sb
-        ? await sb.from('profiles').select('display_name').eq('id', verifiedUid).single()
-        : { data: null };
-      const dn = (data as { display_name?: string | null } | null)?.display_name;
-      if (dn && dn.trim()) displayName = dn.trim().slice(0, 40);
-    } catch {
-      // ignore — profile sync runs after login regardless
+    if (verifiedUid) {
+      try {
+        const sb = getSupabase();
+        const { data } = sb
+          ? await sb.from('profiles').select('display_name').eq('id', verifiedUid).single()
+          : { data: null };
+        const dn = (data as { display_name?: string | null } | null)?.display_name;
+        if (dn && dn.trim()) displayName = dn.trim().slice(0, 40);
+      } catch {
+        // ignore — profile sync runs after login regardless
+      }
     }
     const national = e164Phone.replace(/\D/g, '').slice(-10);
     const authenticatedUser: User = {
@@ -239,6 +294,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       name: displayName,
       isLoggedIn: true,
       isAdmin: false,
+      accountId: stableAccountIdFor(e164Phone),
       tier: 'free',
       fontsCreatedCount: 0,
       totalDownloads: 0,
@@ -291,7 +347,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 <span className="text-xl font-bold font-sans text-neutral-900 tracking-tight">Type</span>
                 <span className="text-2xl font-bold font-handwriting italic text-neutral-900 -ml-0.5">Me</span>
               </div>
-              <h3 className="text-2xl font-bold text-neutral-900 font-serif">Welcome back.</h3>
+                <h3 className="text-2xl font-bold text-neutral-900 font-serif">Welcome back.</h3>
               <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
                 Continue your handwriting journey.
               </p>
@@ -411,11 +467,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 Enter your verification code
               </h3>
               <p className="text-xs text-neutral-500 mt-1">
-                We sent a {OTP_POLICY.length}-digit code to{' '}
-                <span className="font-semibold text-neutral-900 font-mono">
-                  {e164Phone ? maskPhone(e164Phone) : `${countryCode} ${phoneNumber}`}
-                </span>
-                .
+                {autoFilled ? (
+                  <>Your 4-digit verification code appears automatically.</>
+                ) : (
+                  <>We sent a {OTP_POLICY.length}-digit code to{' '}
+                  <span className="font-semibold text-neutral-900 font-mono">
+                    {e164Phone ? maskPhone(e164Phone) : `${countryCode} ${phoneNumber}`}
+                  </span>
+                  .</>
+                )}
               </p>
               {e164Phone && isTestBridgeRoute(e164Phone) ? (
                 <p className="text-[11px] text-neutral-400 mt-1 font-mono">
@@ -470,6 +530,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               </span>
               <button
                 onClick={() => {
+                  if (autoVerifyTimer.current) {
+                    clearTimeout(autoVerifyTimer.current);
+                    autoVerifyTimer.current = null;
+                  }
+                  setAutoFilled(false);
                   setStep('phone');
                   setErrorMessage(null);
                 }}

@@ -24,6 +24,7 @@ export const NOT_CONFIGURED = "supabase-unconfigured";
 export const UNAUTHENTICATED = "supabase-unauthenticated";
 
 const sessionUid = async (): Promise<string> => {
+  if (pinnedUid) return pinnedUid;
   const sb = getSupabase();
   if (!sb) throw new Error(NOT_CONFIGURED);
   const { data, error } = await sb.auth.getSession();
@@ -31,6 +32,17 @@ const sessionUid = async (): Promise<string> => {
   const uid = data.session?.user?.id ?? null;
   if (!uid) throw new Error(UNAUTHENTICATED);
   return uid;
+};
+
+/**
+ * Pin the UID for a multi-operation flight (establish, save). Concurrent
+ * sign-ins must never produce split-brain writes (project under uid A,
+ * glyphs under uid B): every op in the flight uses one UID, so the flight
+ * either fully succeeds or fails closed via RLS. Always unpin in finally.
+ */
+let pinnedUid: string | null = null;
+export const pinSessionUid = (uid: string | null): void => {
+  pinnedUid = uid;
 };
 
 export interface DbProject {
@@ -506,8 +518,7 @@ export const createPendingSubscription = async (
   return data as DbSubscription;
 };
 
-/** Read my subscription row (RLS-scoped). Null when none exists. */
-export const readMySubscription = async (): Promise<DbSubscription | null> => {
+/** Read my subscription row (RLS-scoped). Null when none exists. */export const readMySubscription = async (): Promise<DbSubscription | null> => {
   const sb = getSupabase();
   if (!sb) throw new Error(NOT_CONFIGURED);
   await sessionUid();

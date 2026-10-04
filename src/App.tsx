@@ -35,6 +35,7 @@ import {
   createPendingSubscription,
   readMyEntitlement,
   recordGeneratedFont,
+  pinSessionUid,
 } from './utils/db';
 import { ensureSupabaseSession, invalidateSessionCache } from './utils/supabaseSession';
 import { getSupabase } from './utils/supabaseClient';
@@ -148,6 +149,13 @@ export default function App() {
     (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
 
   const enterServerMode = async (baseLocal: FontProject[], phoneRaw?: string | null) => {
+    // Join an in-flight establish instead of racing it: two concurrent
+    // runs mint two sessions and split-brain the migration (projects under
+    // one UID, glyphs under another → RLS rejects half the flight).
+    if (establishingRef.current && serverSettled.current) {
+      await serverSettled.current.catch(() => {});
+      return;
+    }
     const run = ++serverRun.current;
     setServerLoading(true);
     establishingRef.current = true;
@@ -158,6 +166,8 @@ export default function App() {
     try {
       const uid = await ensureSupabaseSession();
       if (run !== serverRun.current) return;
+      // Pin this UID for the whole flight (see pinSessionUid).
+      pinSessionUid(uid);
       const e164 = phoneRaw ? toE164Loose(phoneRaw) : null;
       // Session ownership gate: a login identity that did not establish
       // this browser session must never see its server account. Run
@@ -284,6 +294,7 @@ export default function App() {
         setServerLoading(false);
         establishingRef.current = false;
       }
+      pinSessionUid(null);
       resolveSettled();
     }
   };
@@ -623,6 +634,7 @@ export default function App() {
     if (!orig) return;
     if (serverUidRef.current) {
       // Authenticated: the copy exists only after Supabase confirms it.
+      pinSessionUid(serverUidRef.current);
       try {
         const row = await createServerProject(
           `${orig.name} (Copy)`,
@@ -663,6 +675,8 @@ export default function App() {
         setProjects((prev) => [copy, ...prev]);
       } catch (err) {
         console.error('Supabase project duplication failed:', err);
+      } finally {
+        pinSessionUid(null);
       }
       return;
     }
@@ -712,12 +726,15 @@ export default function App() {
     }
     if (serverUidRef.current) {
       // Delete server-side first; the row stays visible if that fails.
+      pinSessionUid(serverUidRef.current);
       try {
         await deleteServerProject(projectId);
       } catch (err) {
         console.error('Supabase project deletion failed:', err);
+        pinSessionUid(null);
         return;
       }
+      pinSessionUid(null);
       serverMut.current += 1;
     }
     const updated = projects.filter((p) => p.id !== projectId);
@@ -744,29 +761,36 @@ export default function App() {
       // Authenticated: persist to Supabase BEFORE touching UI state, so the
       // editor's saved indicator (and its retry pill on throw) reflects the
       // real persistence result. Strokes are never shown as saved early.
-      await upsertServerGlyph(targetId, {
-        character: char,
-        variant_number: 0,
-        strokes,
-        status: strokes.length > 0 ? 'good' : 'empty',
-        is_saved: true,
-      });
-      const vs = variants ?? [];
-      for (let i = 0; i < vs.length; i++) {
-        if (!vs[i]?.length) continue;
+      // The whole multi-upsert flight is pinned to one UID (no split-brain
+      // if the session rotates mid-save).
+      pinSessionUid(liveUid);
+      try {
         await upsertServerGlyph(targetId, {
           character: char,
-          variant_number: i + 1,
-          strokes: vs[i],
-          status: 'good',
+          variant_number: 0,
+          strokes,
+          status: strokes.length > 0 ? 'good' : 'empty',
           is_saved: true,
         });
+        const vs = variants ?? [];
+        for (let i = 0; i < vs.length; i++) {
+          if (!vs[i]?.length) continue;
+          await upsertServerGlyph(targetId, {
+            character: char,
+            variant_number: i + 1,
+            strokes: vs[i],
+            status: 'good',
+            is_saved: true,
+          });
+        }
+        // Drop server variant rows the user deleted locally.
+        await deleteServerVariantsFrom(targetId, char, vs.length + 1);
+        await updateServerProject(targetId, {
+          updated_at: new Date().toISOString(),
+        });
+      } finally {
+        pinSessionUid(null);
       }
-      // Drop server variant rows the user deleted locally.
-      await deleteServerVariantsFrom(targetId, char, vs.length + 1);
-      await updateServerProject(targetId, {
-        updated_at: new Date().toISOString(),
-      });
       serverMut.current += 1;
     }
     setProjects((prev) =>

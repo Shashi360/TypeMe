@@ -46,6 +46,12 @@ export interface User {
   name: string;
   isLoggedIn: boolean;
   isAdmin?: boolean;
+  /**
+   * Stable local account ID (deterministic per phone, see
+   * utils/identity.ts). Scopes caches/logs only — NEVER database
+   * ownership, which is always auth.uid() from a live Supabase session.
+   */
+  accountId?: string;
   tier: 'free' | 'creator' | 'pro';
   fontsCreatedCount: number;
   totalDownloads: number;

@@ -1070,6 +1070,17 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     };
   }, [isDirty, performSave]);
 
+  // Offline tolerance: a save that failed (server unreachable) retries
+  // automatically when connectivity returns. Local strokes are never
+  // discarded because the server failed.
+  useEffect(() => {
+    const onOnline = () => {
+      if (saveError) performSave().catch(() => {});
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [saveError, performSave]);
+
   // Progress denominator is plan-aware: Free tracks against the starter
   // set from central entitlements, Pro against the full glyph set.
   const progressDenominator = ent.isPro ? totalCount : FREE_CHARACTER_SET.length;
