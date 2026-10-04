@@ -3,7 +3,8 @@ import { User } from '../types';
 import { ShieldCheck, ArrowRight, CheckCircle2, ChevronDown, X } from 'lucide-react';
 import { normalizeIndianPhone, maskPhone } from '../utils/phone';
 import { OTP_POLICY } from '../utils/otpConfig';
-import { getOtpProvider, isDemoAuthEnabled } from '../utils/otpProvider';
+import { getOtpProvider, isDemoAuthEnabled, isTestBridgeRoute, isLocalSimulated } from '../utils/otpProvider';
+import { getSupabase } from '../utils/supabaseClient';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -40,12 +41,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [storyIndex, setStoryIndex] = useState(0);
   // Canonical phone for the in-flight attempt (set on send, cleared on change-number).
   const [e164Phone, setE164Phone] = useState<string>('');
+  // Verified Supabase identity for the in-flight attempt. Login NEVER
+  // completes without a real session backing it (checked explicitly below).
+  const [verifiedUid, setVerifiedUid] = useState<string | null>(null);
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
   // Resend countdown
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     if (step === 'otp' && countdown > 0) {
       timer = setTimeout(() => setCountdown(countdown - 1), 1000);
     }
@@ -63,6 +67,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       setIsSubmitting(false);
       setCountdown(OTP_POLICY.resendCooldownSeconds);
       setE164Phone('');
+      setVerifiedUid(null);
     }
   }, [isOpen]);
 
@@ -163,6 +168,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         setErrorMessage(res.message);
         return;
       }
+      // Production gate: the code is worthless without a real authenticated
+      // Supabase session behind it. Never report success on OTP alone.
+      // (The legacy local simulator is the only path exempt — it cannot
+      // mint sessions by design and is badged non-production on screen.)
+      if (provider.establishesSession !== false) {
+        const sb = getSupabase();
+        const { data: sessionData } = sb
+          ? await sb.auth.getUser()
+          : { data: { user: null } };
+        if (!sessionData?.user?.id) {
+          setErrorMessage("Couldn't verify the code. Please try again.");
+          return;
+        }
+        setVerifiedUid(sessionData.user.id);
+      }
       // Transition to post-login story experience
       setStep('post_login');
     } catch {
@@ -186,16 +206,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
   };
 
-  const finalizeLogin = () => {
+  const finalizeLogin = async () => {
+    // No verified session, no login — the story screens can only be
+    // reached after verification. (Legacy simulator exempt, as above.)
+    const provider = getOtpProvider();
+    if (provider?.establishesSession !== false && (!verifiedUid || !e164Phone)) {
+      setErrorMessage("Couldn't verify the code. Please try again.");
+      setStep('phone');
+      return;
+    }
+    if (!e164Phone) {
+      setErrorMessage("Couldn't verify the code. Please try again.");
+      setStep('phone');
+      return;
+    }
+    // Display name is best-effort from the user's own profile row; the
+    // session stays the sole authority and no privilege is fabricated.
+    let displayName = 'You';
+    try {
+      const sb = getSupabase();
+      const { data } = sb
+        ? await sb.from('profiles').select('display_name').eq('id', verifiedUid).single()
+        : { data: null };
+      const dn = (data as { display_name?: string | null } | null)?.display_name;
+      if (dn && dn.trim()) displayName = dn.trim().slice(0, 40);
+    } catch {
+      // ignore — profile sync runs after login regardless
+    }
     const national = e164Phone.replace(/\D/g, '').slice(-10);
     const authenticatedUser: User = {
       phone: national ? `+91 ${national.slice(0, 5)} ${national.slice(5)}` : e164Phone,
-      name: 'Shashi',
+      name: displayName,
       isLoggedIn: true,
-      isAdmin: true,
+      isAdmin: false,
       tier: 'free',
-      fontsCreatedCount: 3,
-      totalDownloads: 6,
+      fontsCreatedCount: 0,
+      totalDownloads: 0,
     };
     onSuccess(authenticatedUser, false);
     onClose();
@@ -371,6 +417,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 </span>
                 .
               </p>
+              {e164Phone && isTestBridgeRoute(e164Phone) ? (
+                <p className="text-[11px] text-neutral-400 mt-1 font-mono">
+                  Test build — controlled test account, verified server-side.
+                </p>
+              ) : null}
+              {e164Phone && !isTestBridgeRoute(e164Phone) && isLocalSimulated() ? (
+                <p className="text-[11px] text-amber-700 mt-1 font-mono">
+                  Local test mode — code checked on this device, session is not phone-bound.
+                </p>
+              ) : null}
             </div>
 
             <div className="flex items-center justify-between gap-2">

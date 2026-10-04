@@ -36,7 +36,7 @@ import {
   readMyEntitlement,
   recordGeneratedFont,
 } from './utils/db';
-import { ensureSupabaseSession } from './utils/supabaseSession';
+import { ensureSupabaseSession, invalidateSessionCache } from './utils/supabaseSession';
 import { getSupabase } from './utils/supabaseClient';
 import { toE164Loose } from './utils/phone';
 
@@ -314,6 +314,7 @@ export default function App() {
         setServerUidSync(null);
         setServerLoading(false);
         establishingRef.current = false;
+        invalidateSessionCache();
         try {
           const local = readLocalList(localKeyRef.current);
           if (local.length) {
@@ -501,10 +502,12 @@ export default function App() {
       // ignore — fall back to the fresh login object
     }
     setUser(nextUser);
-    // Server becomes authoritative: migrate local work into this account,
-    // then replace the dashboard source with the verified server response.
+    // Fresh authentication: drop any cached UID from a previous account so
+    // the mode decision below reads the live session, then migrate local
+    // work into this account and replace the dashboard source.
     // Runs in the background; local cache stays visible meanwhile.
     serverRestored.current = true;
+    invalidateSessionCache();
     void enterServerMode(projects, nextUser.phone).catch(() => {});
     if (isNewUser) {
       setOnboardingModalOpen(true);
@@ -515,13 +518,16 @@ export default function App() {
 
   const handleLogout = () => {
     // Drop server state first so nothing from this account can leak into
-    // the next session. The Supabase session itself stays (sticky anon
-    // identity per browser); the ownership gate at next login decides
-    // server vs local-only mode. Restore this identity's own local cache.
+    // the next session, then end the Supabase session itself: the next
+    // login establishes its own session (real auth users are permanent
+    // server-side, so returning users recover their data). The SIGNED_OUT
+    // listener below is a no-op once server state is already cleared.
+    // Restore this identity's own local cache.
     serverRun.current += 1;
     setServerUidSync(null);
     setServerLoading(false);
     establishingRef.current = false;
+    invalidateSessionCache();
     try {
       const local = readLocalList(localKeyRef.current);
       if (local.length) {
@@ -532,6 +538,24 @@ export default function App() {
       // ignore — keep in-memory state
     }
     localKeyRef.current = GUEST_PROJECTS_KEY;
+    // End the Supabase session for REAL (non-anonymous) logins so the next
+    // account starts clean. Anonymous device sessions stay sticky: signing
+    // them out would orphan their server rows with no recovery path, while
+    // the ownership gate already isolates mismatched logins app-side.
+    try {
+      void (async () => {
+        try {
+          const sb = getSupabase();
+          const { data } = (await sb?.auth.getUser()) ?? { data: { user: null } };
+          const anon = (data?.user as { is_anonymous?: boolean } | null)?.is_anonymous;
+          if (data?.user && anon !== true) await sb?.auth.signOut();
+        } catch {
+          // ignore
+        }
+      })();
+    } catch {
+      // ignore
+    }
     setUser(null);
     setCurrentView('landing');
   };

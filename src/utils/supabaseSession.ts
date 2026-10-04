@@ -65,3 +65,18 @@ export const ensureSupabaseSession = async (): Promise<string | null> => {
 
 /** For diagnostics only — never rendered as identity. */
 export const getCachedSupabaseUid = (): string | null => cachedUid ?? null;
+
+/**
+ * Drop the cached UID (and the disabled-endpoint memory) so the next
+ * ensureSupabaseSession() re-reads the live session. Call on logout,
+ * SIGNED_OUT, and immediately after any fresh authentication — otherwise a
+ * previous account's UID would keep routing the new login's data.
+ */
+export const invalidateSessionCache = (): void => {
+  cachedUid = undefined;
+  try {
+    sessionStorage.removeItem(DISABLED_FLAG);
+  } catch {
+    // ignore
+  }
+};
