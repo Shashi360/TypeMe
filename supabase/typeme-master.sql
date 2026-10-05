@@ -159,6 +159,45 @@ create table if not exists public.payments (
 create index if not exists payments_user_id_idx on public.payments (user_id);
 create index if not exists payments_razorpay_payment_id_idx on public.payments (razorpay_payment_id);
 
+-- 'processing' is the internal idempotency-claim state used by the
+-- verify-payment function (atomic claim before activation). Never final.
+DO $$ BEGIN
+  alter table public.payments drop constraint if exists payments_status_check;
+  alter table public.payments add constraint payments_status_check
+    check (status in ('pending', 'processing', 'verified', 'failed', 'cancelled', 'refunded'));
+EXCEPTION WHEN others THEN NULL; END $$;
+
+-- Payment idempotency: one row per Razorpay payment/order. Duplicate
+-- verify/webhook deliveries converge instead of double-activating.
+DO $$ BEGIN
+  alter table public.payments add constraint payments_razorpay_payment_id_key unique (razorpay_payment_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  alter table public.payments add constraint payments_razorpay_order_id_key unique (razorpay_order_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Stable-account identity bridge (demo-auth era): maps a TypeMe accountId
+-- (deterministic per phone, see app utils/identity.ts) to the Supabase
+-- auth.uid() that paid. Lets entitlement survive anonymous-UID rotation
+-- and maps cleanly to one permanent UID under real phone auth — without
+-- ever using phone as a foreign key on owned rows. RLS enabled with NO
+-- user policies: service-role (Edge Functions) only. A computable
+-- accountId is NOT proof of ownership; payment integrity itself never
+-- depends on it (signatures, server amounts, uid-keyed rows).
+create table if not exists public.account_links (
+  account_id text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  phone_e164 text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists account_links_user_id_idx on public.account_links (user_id);
+alter table public.account_links enable row level security;
+drop trigger if exists set_account_links_updated_at on public.account_links;
+create trigger set_account_links_updated_at
+  before update on public.account_links
+  for each row execute function public.handle_updated_at();
+
 create table if not exists public.user_settings (
   user_id uuid primary key references auth.users (id) on delete cascade,
   theme text,

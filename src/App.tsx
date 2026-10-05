@@ -148,6 +148,62 @@ export default function App() {
     typeof import.meta !== 'undefined' &&
     (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
 
+  // Server entitlement adoption (single choke point). Backend-activated
+  // Pro is adopted; server-expired forces Free; pending/absent leaves the
+  // local state untouched. Called at establish and after verified payment.
+  const adoptServerEntitlement = (ent: unknown) => {
+    const e = ent as {
+      plan?: string;
+      isPro?: boolean;
+      isActive?: boolean;
+      startedAt?: number | null;
+      expiresAt?: number | null;
+    } | null;
+    if (!e) return;
+    if (e.isPro && e.isActive) {
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              tier: 'pro',
+              subscription: {
+                plan: 'pro',
+                status: 'active',
+                startedAt: typeof e.startedAt === 'number' ? e.startedAt : Date.parse(String(e.startedAt ?? '')) || Date.now(),
+                expiresAt: typeof e.expiresAt === 'number' ? e.expiresAt : Date.parse(String(e.expiresAt ?? '')) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+              },
+            }
+          : prev
+      );
+    } else if (e.expiresAt && !e.isActive) {
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              tier: 'free',
+              subscription: {
+                plan: 'pro',
+                status: 'expired',
+                startedAt: typeof e.startedAt === 'number' ? e.startedAt : Date.parse(String(e.startedAt ?? '')) || Date.now(),
+                expiresAt: typeof e.expiresAt === 'number' ? e.expiresAt : Date.parse(String(e.expiresAt ?? '')) || Date.now(),
+              },
+            }
+          : prev
+      );
+    }
+  };
+
+  // Re-read authoritative entitlement (post-payment, renewals). Never
+  // fabricates: only a server-active Pro flips the tier.
+  const refreshServerEntitlement = async (): Promise<void> => {
+    try {
+      const ent = await readMyEntitlement();
+      adoptServerEntitlement(ent);
+    } catch {
+      // ignore — local state stays until the server is reachable
+    }
+  };
+
   const enterServerMode = async (baseLocal: FontProject[], phoneRaw?: string | null) => {
     // Join an in-flight establish instead of racing it: two concurrent
     // runs mint two sessions and split-brain the migration (projects under
@@ -238,45 +294,8 @@ export default function App() {
       // the local demo state untouched.
       readMyEntitlement()
         .then((ent) => {
-          const e = ent as {
-            plan?: string;
-            isPro?: boolean;
-            isActive?: boolean;
-            startedAt?: number | null;
-            expiresAt?: number | null;
-          } | null;
-          if (run !== serverRun.current || !e) return;
-          if (e.isPro && e.isActive) {
-            setUser((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    tier: 'pro',
-                    subscription: {
-                      plan: 'pro',
-                      status: 'active',
-                      startedAt: e.startedAt ?? Date.now(),
-                      expiresAt: e.expiresAt ?? Date.now() + 30 * 24 * 60 * 60 * 1000,
-                    },
-                  }
-                : prev
-            );
-          } else if (e.expiresAt && !e.isActive) {
-            setUser((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    tier: 'free',
-                    subscription: {
-                      plan: 'pro',
-                      status: 'expired',
-                      startedAt: e.startedAt ?? Date.now(),
-                      expiresAt: e.expiresAt ?? Date.now(),
-                    },
-                  }
-                : prev
-            );
-          }
+          if (run !== serverRun.current) return;
+          adoptServerEntitlement(ent);
         })
         .catch(() => {});
       // Re-read the local caches: projects created while the session was
@@ -958,9 +977,10 @@ export default function App() {
     }
   };
 
-  // Upgrade user tier (demo checkout). Records a local 30-day subscription;
-  // expiry later flips entitlement back to Free without touching user data.
-  // Requires a real logged-in user: guests are sent to login and Pro is
+  // Upgrade user tier — DEV MOCK ONLY (explicit VITE_ALLOW_DEV_MOCK_PAY).
+  // Production activation flows exclusively through backend-verified
+  // payment (PricingView -> onProActivated -> refreshServerEntitlement).
+  // Requires a real logged-in user; guests are sent to login and Pro is
   // never granted to a fabricated account.
   const handleUpgradeTier = (tier: 'creator' | 'pro' = 'creator') => {
     if (!user) {
@@ -1153,6 +1173,9 @@ export default function App() {
                 else setCurrentView('dashboard');
               }}
               onOpenAuth={() => setAuthModalOpen(true)}
+              onProActivated={() => {
+                void refreshServerEntitlement();
+              }}
             />
           )}
         </div>

@@ -35,6 +35,36 @@ native SMS (which fails closed without Twilio) — that failure IS the
 honest signal, not a bug. Until Twilio is configured, real-number SMS
 likewise fails closed with a plain error.
 
+## Production payments (Razorpay ₹99 Pro)
+
+Edge Functions are this project's backend (no separate server):
+
+  supabase/functions/create-order        POST { accountId }
+  supabase/functions/verify-payment      POST { accountId, razorpay_order_id,
+                                               razorpay_payment_id, razorpay_signature }
+  supabase/functions/razorpay-webhook    POST (Razorpay-signed events)
+  supabase/functions/subscription-status GET (caller JWT)
+
+Deploy + secrets (Dashboard or CLI; values never enter the repo):
+
+  supabase functions deploy create-order verify-payment razorpay-webhook subscription-status
+  supabase secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+    RAZORPAY_KEY_ID=... RAZORPAY_KEY_SECRET=... RAZORPAY_WEBHOOK_SECRET=... \
+    APP_ORIGIN='http://localhost:5173'   # comma-separated; exact web origins
+  # TEST_OTP_MAP='{"+917760593180":"7760",...}'  (verify-test-otp only)
+
+Then register the webhook URL in the Razorpay Dashboard:
+  https://rifdeflmatwsyvexevgs.supabase.co/functions/v1/razorpay-webhook
+
+Security shape: browser holds no secrets (public Key ID arrives per-order
+from create-order); amounts fixed server-side (9900 paise); HMAC verify +
+server-side capture check before activation; atomic payment-claim makes
+duplicate verify/webhook/double-click converge on one 30-day period
+(renewals extend from max(now, current expiry)); subscriptions stay
+uid-keyed under RLS; account_links only helps entitlement lookup survive
+anonymous-UID rotation (it is not proof of ownership — demo-phase residual,
+resolved by real phone auth).
+
 Live-project checklist (cannot be done from this repo): enable Anonymous
 Sign-Ins if guest flow is wanted, verify the `fonts` bucket is private,
 run the two-user RLS isolation test, wire the Razorpay webhook to update

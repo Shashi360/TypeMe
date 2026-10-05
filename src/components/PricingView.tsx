@@ -1,12 +1,25 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { Check, ArrowRight, CheckCircle2, X, PenTool } from 'lucide-react';
+import {
+  PayState,
+  VerifiedEntitlement,
+  PaymentError,
+  createProOrder,
+  verifyProPayment,
+  loadRazorpayScript,
+  openRazorpayCheckout,
+  isDevMockPayEnabled,
+} from '../utils/payments';
+import { formatPlanDate } from '../utils/subscription';
 
 interface PricingViewProps {
   user: User | null;
   onUpgradeTier: (tier: 'creator' | 'pro') => void;
   onStartFree: () => void;
   onOpenAuth: () => void;
+  /** Called after backend-verified activation so the app refreshes entitlement. */
+  onProActivated: () => void;
 }
 
 export const PricingView: React.FC<PricingViewProps> = ({
@@ -14,24 +27,108 @@ export const PricingView: React.FC<PricingViewProps> = ({
   onUpgradeTier,
   onStartFree,
   onOpenAuth,
+  onProActivated,
 }) => {
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [payState, setPayState] = useState<PayState>('IDLE');
+  const [payError, setPayError] = useState<string | null>(null);
+  const [activated, setActivated] = useState<VerifiedEntitlement | null>(null);
 
-  const handleSimulatePayment = () => {
-    // Defense in depth: checkout requires a real account even if the modal
-    // were opened without one.
+  const busy = payState === 'CREATING_ORDER' || payState === 'CHECKOUT_OPEN' || payState === 'VERIFYING';
+
+  const openCheckout = () => {
+    setPayError(null);
+    setActivated(null);
+    setPayState('IDLE');
+    setCheckoutModalOpen(true);
+  };
+
+  const payButtonLabel = (): string => {
+    switch (payState) {
+      case 'CREATING_ORDER':
+        return 'Creating secure order...';
+      case 'CHECKOUT_OPEN':
+        return 'Waiting for payment...';
+      case 'VERIFYING':
+        return 'Verifying payment...';
+      case 'SUCCESS':
+        return 'Pro Activated';
+      default:
+        return 'Confirm & Start Pro (₹99/month)';
+    }
+  };
+
+  const handlePay = async () => {
+    // Login gate first: no account, no payment.
     if (!user) {
       setCheckoutModalOpen(false);
       onOpenAuth();
       return;
     }
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setCheckoutModalOpen(false);
+    // Explicit dev-only mock (UI testing pre-deploy). Never in production.
+    if (isDevMockPayEnabled()) {
       onUpgradeTier('pro');
-    }, 700);
+      setCheckoutModalOpen(false);
+      return;
+    }
+    const accountId = user.accountId;
+    if (!accountId) {
+      setPayState('FAILED');
+      setPayError('Account not ready. Please log in again.');
+      return;
+    }
+    setPayError(null);
+    setPayState('CREATING_ORDER');
+    try {
+      const order = await createProOrder(accountId);
+      await loadRazorpayScript();
+      if (!user) throw new PaymentError('NO_SESSION', 'Please log in to continue.', false);
+      setPayState('CHECKOUT_OPEN');
+      openRazorpayCheckout({
+        keyId: order.keyId,
+        orderId: order.orderId,
+        amount: order.amount,
+        currency: order.currency,
+        phone: user.phone,
+        accountId,
+        onSuccess: (r) => {
+          void (async () => {
+            setPayState('VERIFYING');
+            try {
+              const ent = await verifyProPayment({
+                accountId,
+                razorpay_order_id: r.razorpay_order_id,
+                razorpay_payment_id: r.razorpay_payment_id,
+                razorpay_signature: r.razorpay_signature,
+                phone_e164: user.phone,
+              });
+              // Only a backend-confirmed active Pro counts — anything else
+              // stays an error, never a silent unlock.
+              if (ent.plan !== 'pro' || ent.status !== 'active') {
+                throw new PaymentError('NOT_ACTIVATED', 'Payment was not completed. Your TypeMe account is still on Free.');
+              }
+              setActivated(ent);
+              setPayState('SUCCESS');
+              onProActivated();
+            } catch (e) {
+              setPayState('FAILED');
+              setPayError(e instanceof PaymentError ? e.message : 'Verification failed. Your TypeMe account is still on Free.');
+            }
+          })();
+        },
+        onDismiss: () => {
+          setPayState('CANCELLED');
+          setPayError('Payment was not completed. Your TypeMe account is still on Free.');
+        },
+        onFailure: (message) => {
+          setPayState('FAILED');
+          setPayError(message);
+        },
+      });
+    } catch (e) {
+      setPayState('FAILED');
+      setPayError(e instanceof PaymentError ? e.message : 'Payment service could not be loaded. Please try again.');
+    }
   };
 
   return (
@@ -162,7 +259,7 @@ export const PricingView: React.FC<PricingViewProps> = ({
             ) : (
               <>
                 <button
-                  onClick={() => setCheckoutModalOpen(true)}
+                  onClick={openCheckout}
                   className="w-full py-3 px-4 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <span>Start Pro — ₹99/month</span>
@@ -222,21 +319,64 @@ export const PricingView: React.FC<PricingViewProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={handleSimulatePayment}
-              disabled={isProcessing}
-              className="w-full py-3 px-4 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-            >
-              {isProcessing
-                ? 'Activating Pro...'
-                : user
+            {payState === 'SUCCESS' && activated ? (
+              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 mb-5 text-center space-y-1">
+                <div className="text-sm font-bold text-emerald-900 font-serif">
+                  Payment successful — TypeMe Pro is now active.
+                </div>
+                <p className="text-xs text-emerald-800">
+                  30 days of Pro access unlocked.
+                  {activated.expiresAt ? (
+                    <> Expires: <strong>{formatPlanDate(Date.parse(activated.expiresAt))}</strong>.</>
+                  ) : null}
+                </p>
+              </div>
+            ) : null}
+
+            {payError && payState !== 'SUCCESS' ? (
+              <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200 mb-4 text-center">
+                {payError}
+              </p>
+            ) : null}
+
+            {payState === 'SUCCESS' ? (
+              <button
+                onClick={() => setCheckoutModalOpen(false)}
+                className="w-full py-3 px-4 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Done
+              </button>
+            ) : (
+              <button
+                onClick={handlePay}
+                disabled={busy}
+                className="w-full py-3 px-4 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {payState !== 'IDLE' && payState !== 'FAILED' && payState !== 'CANCELLED' ? payButtonLabel() : user
                   ? 'Confirm & Start Pro (₹99/month)'
                   : 'Log in to continue'}
-            </button>
+              </button>
+            )}
+            {payState === 'FAILED' || payState === 'CANCELLED' ? (
+              <button
+                onClick={() => {
+                  setPayError(null);
+                  setPayState('IDLE');
+                }}
+                className="w-full mt-2 py-2.5 px-4 text-xs font-semibold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Try again
+              </button>
+            ) : null}
             {!user ? (
-              <p className="text-[11px] text-neutral-500 font-mono">
+              <p className="text-[11px] text-neutral-500 font-mono mt-2">
                 Pro checkout needs a TypeMe account — no payment is taken
                 before you log in.
+              </p>
+            ) : null}
+            {isDevMockPayEnabled() && user && payState === 'IDLE' ? (
+              <p className="text-[11px] text-amber-700 font-mono mt-2">
+                Test mode — mock checkout, no real charge.
               </p>
             ) : null}
           </div>
