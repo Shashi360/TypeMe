@@ -134,17 +134,35 @@ export const readMyEntitlement = async (): Promise<unknown> => {
 };
 
 const MIGRATION_FLAG_PREFIX = "typeme_migrated_";
-// Global claim registry: local project id -> uid that already claimed it.
-// Prevents one browser login from ever migrating another login's leftovers
-// into its own account (ids stay claimable only by their first claimant).
+// Global claim registry: local project id -> { uid, phone } of the login
+// that already claimed it. Another PHONE can never steal it; the SAME phone
+// may reclaim it under a fresh session (anonymous UIDs rotate per login,
+// phone identity is stable). Legacy string entries (uid only) are honored
+// conservatively: same-uid reuse only.
 const CLAIM_KEY = "typeme_claimed_local";
 
-const readClaimed = (): Record<string, string> => {
+interface ClaimRecord {
+  u: string;
+  p?: string | null;
+}
+
+const readClaimed = (): Record<string, ClaimRecord | string> => {
   try {
-    return JSON.parse(localStorage.getItem(CLAIM_KEY) || "{}") as Record<string, string>;
+    return JSON.parse(localStorage.getItem(CLAIM_KEY) || "{}") as Record<string, ClaimRecord | string>;
   } catch {
     return {};
   }
+};
+
+const claimAllows = (
+  entry: ClaimRecord | string | undefined,
+  uid: string,
+  loginPhone: string | null,
+): boolean => {
+  if (!entry) return true;
+  if (typeof entry === "string") return entry === uid;
+  if (entry.u === uid) return true;
+  return !!loginPhone && !!entry.p && entry.p === loginPhone;
 };
 
 const DEV_LOG =
@@ -170,6 +188,7 @@ export interface LocalProjectLike {
  */
 export const migrateLocalProjectsToSupabase = async (
   localProjects: LocalProjectLike[],
+  loginPhoneE164: string | null = null,
 ): Promise<number> => {
   // Establish the backend session first (anonymous UID when enabled).
   // No session, no migration — local data stays exactly as it is.
@@ -203,8 +222,9 @@ export const migrateLocalProjectsToSupabase = async (
   for (const lp of localProjects) {
     if (idMap[lp.id]) continue;
     // Another login identity already claimed this local project: never
-    // migrate one account's leftovers into a different account.
-    if (claimed[lp.id] && claimed[lp.id] !== uid) continue;
+    // migrate one account's leftovers into a different account. The same
+    // phone may reclaim under a fresh session (see claimAllows).
+    if (!claimAllows(claimed[lp.id], uid, loginPhoneE164)) continue;
     const { data, error } = await sb
       .from("projects")
       .insert({
@@ -242,7 +262,7 @@ export const migrateLocalProjectsToSupabase = async (
     }
     idMap[lp.id] = row.id;
     mapDirty = true;
-    claimed[lp.id] = uid;
+    claimed[lp.id] = { u: uid, p: loginPhoneE164 };
     claimedDirty = true;
     migrated += 1;
   }

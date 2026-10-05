@@ -164,36 +164,62 @@ export default function App() {
       resolveSettled = res;
     });
     try {
-      const uid = await ensureSupabaseSession();
+      let uid = await ensureSupabaseSession();
       if (run !== serverRun.current) return;
-      // Pin this UID for the whole flight (see pinSessionUid).
-      pinSessionUid(uid);
       const e164 = phoneRaw ? toE164Loose(phoneRaw) : null;
-      // Session ownership gate: a login identity that did not establish
-      // this browser session must never see its server account. Run
-      // local-only under a phone-scoped cache instead of migrating into it.
-      let owner: string | null = null;
-      try {
-        owner = localStorage.getItem(`${SESSION_OWNER_PREFIX}${uid}`);
-      } catch {
-        owner = null;
-      }
-      if (e164 && owner && owner !== e164) {
-        if (DEV_APP) {
-          console.info(
-            `[typeme] session owned by another login; local-only mode (no server read/migrate)`
-          );
+      // Session ownership: the browser session remembers which login
+      // claimed it first. A DIFFERENT login mints a FRESH session so every
+      // number syncs under its own UID (visible in Supabase, RLS-isolated)
+      // instead of only the first-ever login syncing. Same-phone returns
+      // reclaim their locals via the phone-aware claim registry; prior
+      // anonymous rows stay orphaned-but-intact (real phone auth will
+      // stabilize one UID per phone and end the rotation).
+      const readOwner = (id: string): string | null => {
+        try {
+          return localStorage.getItem(`${SESSION_OWNER_PREFIX}${id}`);
+        } catch {
+          return null;
         }
+      };
+      const owner = uid ? readOwner(uid) : null;
+      if (uid && e164 && owner && owner !== e164) {
+        if (DEV_APP) {
+          console.info(`[typeme] session owned by another login; minting fresh session`);
+        }
+        let fresh: string | null = null;
+        try {
+          invalidateSessionCache();
+          await getSupabase()?.auth.signOut();
+          invalidateSessionCache();
+          fresh = await ensureSupabaseSession();
+        } catch {
+          fresh = null;
+        }
+        if (fresh && run === serverRun.current) {
+          uid = fresh;
+        } else {
+          // Rotation failed: stay local-only under a phone-scoped cache.
+          // Never read or migrate into another identity's account.
+          if (DEV_APP) {
+            console.info(`[typeme] session rotation failed; local-only mode (no server read/migrate)`);
+          }
+          setServerUidSync(null);
+          localKeyRef.current = scopedLocalKey(e164);
+          const scoped = readLocalList(localKeyRef.current);
+          setProjects(scoped);
+          setActiveProjectId(scoped[0]?.id || '');
+          return;
+        }
+      }
+      if (!uid) {
         setServerUidSync(null);
-        localKeyRef.current = scopedLocalKey(e164);
-        const scoped = readLocalList(localKeyRef.current);
-        setProjects(scoped);
-        setActiveProjectId(scoped[0]?.id || '');
         return;
       }
+      // Pin this UID for the whole flight (see pinSessionUid).
+      pinSessionUid(uid);
       setServerUidSync(uid);
       localKeyRef.current = GUEST_PROJECTS_KEY;
-      if (e164 && !owner) {
+      if (e164 && !readOwner(uid)) {
         try {
           localStorage.setItem(`${SESSION_OWNER_PREFIX}${uid}`, e164);
         } catch {
@@ -254,24 +280,50 @@ export default function App() {
         })
         .catch(() => {});
       // Re-read the local caches: projects created while the session was
-      // being established, plus this login's phone-scoped local work, are
-      // not in the login-time snapshot. Union by id; the claim registry
-      // inside migrateLocalProjectsToSupabase still blocks cross-account
-      // claims and local data is never deleted.
+      // being established, this login's phone-scoped local work, plus the
+      // phone's server mirror (rows stranded under a previous anonymous
+      // UID — re-migrated, never rendered directly). Union by id; the
+      // phone-aware claim registry still blocks cross-account claims and
+      // local data is never deleted.
       let base = baseLocal;
       try {
         const seen = new Set(base.map((p) => p?.id));
+        const mirrorKey = e164 ? `typeme_mirror_${e164.replace(/\D/g, '')}` : null;
         for (const key of [GUEST_PROJECTS_KEY, scopedLocalKey(e164)]) {
           const stored = readLocalList(key);
           const extra = stored.filter((p) => p && !seen.has(p.id));
           for (const p of extra) seen.add(p.id);
           if (extra.length) base = [...base, ...extra];
         }
+        // Mirror rows carry the last verified server state: where a mirror
+        // row matches a local twin (same name + progress), it REPLACES the
+        // twin instead of duplicating it. Unmatched mirror rows (pure
+        // server-side work) are appended. Local-only distinct projects
+        // (even same-named) are never merged with each other.
+        if (mirrorKey) {
+          const mirrorRows = readLocalList(mirrorKey);
+          const sig = (p: FontProject) => `${p?.name ?? ''}|${p?.characterCount ?? 0}`;
+          const twinIndex = new Map<string, number>();
+          base.forEach((p, i) => {
+            const k = sig(p);
+            if (!twinIndex.has(k)) twinIndex.set(k, i);
+          });
+          for (const m of mirrorRows) {
+            if (!m || seen.has(m.id)) continue;
+            seen.add(m.id);
+            const k = sig(m);
+            const at = twinIndex.get(k);
+            if (at !== undefined) {
+              base[at] = m;
+              twinIndex.delete(k);
+            } else base = [...base, m];
+          }
+        }
       } catch {
         // ignore — fall back to the login-time snapshot
       }
       const v0 = serverMut.current;
-      await migrateLocalProjectsToSupabase(base).catch(() => {});
+      await migrateLocalProjectsToSupabase(base, e164).catch(() => {});
       if (run !== serverRun.current) return;
       let server = await loadMyProjects();
       if (run !== serverRun.current) return;
@@ -475,6 +527,28 @@ export default function App() {
       // ignore
     }
   }, [projects, serverUid]);
+
+  // Server snapshot mirror (per login phone): the last verified server
+  // project list seen by this phone. Used ONLY as re-migration base when a
+  // fresh anonymous session starts empty — anonymous UIDs rotate per login
+  // while the phone identity is stable, so without this a returning login
+  // would lose sight of rows stranded under a previous UID. The mirror is
+  // never rendered directly; the verified server response always wins.
+  // (Real phone auth ends the rotation: one UID per phone, mirror unused.)
+  useEffect(() => {
+    if (!serverUid || !user) return;
+    try {
+      const ownerPhone =
+        localStorage.getItem(`${SESSION_OWNER_PREFIX}${serverUid}`) ||
+        (user.phone ? toE164Loose(user.phone) || '' : '');
+      const digits = (ownerPhone || '').replace(/\D/g, '');
+      if (digits) {
+        localStorage.setItem(`typeme_mirror_${digits}`, JSON.stringify(projects));
+      }
+    } catch {
+      // ignore (quota etc.) — mirror is best-effort
+    }
+  }, [projects, serverUid, user]);
 
   // Active project helper
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0];

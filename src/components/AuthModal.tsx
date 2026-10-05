@@ -106,22 +106,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       setStep('otp');
       setCountdown(OTP_POLICY.resendCooldownSeconds);
       setOtp(Array(OTP_POLICY.length).fill(''));
-      // Simulated routes auto-populate the generated code (Zyloom-style);
-      // real routes leave the boxes empty for what the user received.
-      // Manual typing/paste/delete still works and cancels auto-verify.
+      // Simulated routes auto-populate the generated code after a short
+      // delay (Zyloom-style), then verification proceeds automatically.
+      // Real routes leave the boxes empty for what the user received.
+      // Manual typing/paste/delete during the wait still works and cancels
+      // the pending auto-fill/verify.
       const auto = provider.autoFillCode?.(normalized.e164) ?? null;
       if (auto && auto.length === OTP_POLICY.length) {
-        setAutoFilled(true);
-        setOtp(auto.split(''));
-        setIsSubmitting(true);
-        // Brief beat so "Verifying..." is perceptible, then verify the
-        // auto-inserted code through the same layer as manual entry.
-        // Manual edits cancel this (see handleOtpChange); no separate
-        // timer bookkeeping beyond the shared ref.
         autoVerifyTimer.current = setTimeout(() => {
           autoVerifyTimer.current = null;
-          verifyOtpCode(auto, normalized.e164).catch(() => {});
-        }, 700);
+          setAutoFilled(true);
+          setOtp(auto.split(''));
+          setIsSubmitting(true);
+          autoVerifyTimer.current = setTimeout(() => {
+            autoVerifyTimer.current = null;
+            verifyOtpCode(auto, normalized.e164).catch(() => {});
+          }, 800);
+        }, OTP_POLICY.autoFillDelayMs);
       } else {
         setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
       }
@@ -246,13 +247,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     setOtp(Array(OTP_POLICY.length).fill(''));
     const auto = provider.autoFillCode?.(e164Phone) ?? null;
     if (auto && auto.length === OTP_POLICY.length) {
-      setAutoFilled(true);
-      setOtp(auto.split(''));
-      setIsSubmitting(true);
       autoVerifyTimer.current = setTimeout(() => {
         autoVerifyTimer.current = null;
-        verifyOtpCode(auto, e164Phone).catch(() => {});
-      }, 700);
+        setAutoFilled(true);
+        setOtp(auto.split(''));
+        setIsSubmitting(true);
+        autoVerifyTimer.current = setTimeout(() => {
+          autoVerifyTimer.current = null;
+          verifyOtpCode(auto, e164Phone).catch(() => {});
+        }, 800);
+      }, OTP_POLICY.autoFillDelayMs);
     } else {
       setTimeout(() => otpInputsRef.current[0]?.focus(), 60);
     }

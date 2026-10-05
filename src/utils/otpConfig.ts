@@ -14,4 +14,7 @@ export const OTP_POLICY = {
   maxAttempts: 5,
   /** Min interval between code requests for the same number (abuse guard). */
   requestThrottleSeconds: 30,
+  /** Simulated-route auto-fill delay after request (user sees empty boxes,
+   * then the generated code appears and verification proceeds). */
+  autoFillDelayMs: 5000,
 } as const;
