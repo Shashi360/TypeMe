@@ -87,6 +87,34 @@ const authedFetch = async (path: string, init: RequestInit): Promise<unknown> =>
       headers: { ...(init.headers || {}), "content-type": "application/json", authorization: `Bearer ${token}` },
     });
   } catch {
+    // Network-level failure (offline, DNS, CORS-blocked, or the function
+    // URL answers nothing at all). Probe with a plain GET to tell
+    // "backend not deployed" (gateway 404) apart from "unreachable".
+    // Neither state has taken any money.
+    let probeStatus: number | null = null;
+    try {
+      // A deployed function answers GET (405) with CORS; the gateway
+      // answers 404 for missing functions; anything else rejects.
+      // No auth header: pure reachability signal.
+      const probe = await fetch(`${base}${path}`, { method: "GET" });
+      probeStatus = probe.status;
+    } catch {
+      probeStatus = null;
+    }
+    if (probeStatus === 404) {
+      throw new PaymentError(
+        "BACKEND_NOT_DEPLOYED",
+        "Payment service is not available yet (server not deployed). No charge was made.",
+        true,
+      );
+    }
+    if (probeStatus === null) {
+      throw new PaymentError(
+        "BACKEND_UNREACHABLE",
+        "Payment service is unavailable right now (server offline or not deployed). No charge was made.",
+        true,
+      );
+    }
     throw new PaymentError("NETWORK", "Network error. Your money is safe — retry verification.", true);
   }
   let body: Record<string, unknown> = {};
